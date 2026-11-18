@@ -1,10 +1,10 @@
 {"scenes": [
-  {"image": "01-title.png", "seconds": 6.8, "motion": "zoom-in", "focus": [0.5, 0.45]},
-  {"image": "02-fact.png", "seconds": 8.8, "motion": "zoom-in", "focus": [0.5, 0.35]},
-  {"image": "03-quote.png", "seconds": 4.3, "motion": "zoom-out"},
-  {"image": "04-list.png", "seconds": 8.4, "motion": "pan-down"},
-  {"image": "05-fact.png", "seconds": 7.7},
-  {"image": "meme.png", "seconds": 7.9, "fit": "contain"},
-  {"image": "06-quote.png", "seconds": 6.4, "motion": "zoom-in"},
+  {"image": "01-title.png", "seconds": 8.3, "motion": "zoom-in"},
+  {"image": "02-fact.png", "seconds": 8.0, "motion": "zoom-in", "focus": [0.5, 0.35]},
+  {"image": "03-quote.png", "seconds": 4.45, "motion": "zoom-out"},
+  {"image": "04-list.png", "seconds": 8.33, "motion": "pan-down"},
+  {"image": "05-fact.png", "seconds": 7.75},
+  {"image": "meme.png", "seconds": 7.97},
+  {"image": "06-quote.png", "seconds": 6.48, "motion": "zoom-in"},
   {"image": "07-sources.png", "seconds": 2.5}
 ], "transition": "fade"}

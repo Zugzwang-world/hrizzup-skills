@@ -1,93 +1,94 @@
 1
-00:00:00,300 --> 00:00:01,640
+00:00:00,300 --> 00:00:01,680
 This is an illustrative sample
 
 2
-00:00:01,640 --> 00:00:04,080
+00:00:01,680 --> 00:00:04,280
 made from Hrizzup's example
 story.
 
 3
-00:00:04,480 --> 00:00:06,320
-Delhi's air has turned severe.
+00:00:04,740 --> 00:00:07,720
+The air across Delhi NCR has
+turned severe.
 
 4
-00:00:07,160 --> 00:00:10,360
-Before dawn on Monday, AQI
-readings in Delhi,
+00:00:08,580 --> 00:00:11,140
+Before dawn on Monday, readings
+in Delhi,
 
 5
-00:00:10,660 --> 00:00:12,760
+00:00:11,500 --> 00:00:13,600
 Noida and Gurugram passed 450,
 
 6
-00:00:13,540 --> 00:00:15,320
+00:00:14,400 --> 00:00:16,100
 the worst of the season so far.
 
 7
-00:00:15,780 --> 00:00:17,380
+00:00:16,560 --> 00:00:18,180
 Doctors advise people with
 
 8
-00:00:17,380 --> 00:00:19,180
+00:00:18,180 --> 00:00:19,940
 breathing problems to stay
 indoors.
 
 9
-00:00:20,260 --> 00:00:22,580
+00:00:21,060 --> 00:00:23,360
 The emergency rules stop
 building work,
 
 10
-00:00:22,780 --> 00:00:24,280
+00:00:23,580 --> 00:00:25,080
 keep diesel trucks out of Delhi,
 
 11
-00:00:24,620 --> 00:00:27,740
+00:00:25,440 --> 00:00:28,540
 and ask offices to let staff
 work from home where they can.
 
 12
-00:00:28,595 --> 00:00:29,980
-Schools changed twice.
+00:00:29,385 --> 00:00:30,780
+The schools news was corrected.
 
 13
-00:00:30,700 --> 00:00:32,740
+00:00:31,460 --> 00:00:33,640
 On Monday, an update said
 schools across
 
 14
-00:00:32,740 --> 00:00:35,660
+00:00:33,640 --> 00:00:36,520
 Delhi NCR had moved online until
 Friday.
 
 15
-00:00:36,280 --> 00:00:37,080
+00:00:37,140 --> 00:00:37,940
 On Tuesday,
 
 16
-00:00:37,360 --> 00:00:40,180
+00:00:38,300 --> 00:00:41,040
 a correction said only Delhi's
 primary schools have.
 
 17
-00:00:40,680 --> 00:00:43,360
+00:00:41,580 --> 00:00:44,280
 Schools in Noida and Gurugram
 remain open.
 
 18
-00:00:44,180 --> 00:00:45,920
+00:00:45,100 --> 00:00:46,840
 What isn't confirmed is how long
 
 19
-00:00:45,920 --> 00:00:47,960
+00:00:46,840 --> 00:00:48,920
 Delhi's primary schools stay
 online.
 
 20
-00:00:48,580 --> 00:00:49,820
+00:00:49,500 --> 00:00:50,720
 The correction doesn't say.
 
 21
-00:00:50,664 --> 00:00:51,900
+00:00:51,581 --> 00:00:52,840
 Sources are in the post.

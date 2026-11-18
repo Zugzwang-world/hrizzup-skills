@@ -90,6 +90,10 @@ class Folder(unittest.TestCase):
             json.dump(document, f)
         return self.path(name)
 
+    def picture(self, *parts, width=1080, height=1920):
+        """A picture file with a real PNG header (a plan reads a picture's shape to choose its `fit`); its pixels aren't there."""
+        return self.touch(*parts, data=test_media.png(width, height))
+
     def m4a(self, name, seconds, codec=b"mp4a"):
         """A synthetic .m4a: its boxes are real, its sound isn't (nothing here plays it)."""
         moov = test_media.box(b"moov", test_media.mvhd(1000, int(seconds * 1000)) + test_media.trak(b"soun", codec))
@@ -102,8 +106,8 @@ class Folder(unittest.TestCase):
 
 class Plans(Folder):
     def plan(self, scenes, **extra):
-        self.touch("cards", "a.png")
-        self.touch("cards", "b.png")
+        self.picture("cards", "a.png")
+        self.picture("cards", "b.png")
         self.touch("c.mp4", data=test_media.ftyp() + test_media.video_moov(6000) + test_media.mdat())  # real boxes: a clip is read from its own bytes
         return self.json_file("plan.json", dict({"scenes": scenes}, **extra))
 
@@ -113,10 +117,37 @@ class Plans(Folder):
         found = edit.read_plan(path)
         self.assertEqual(found["transition"], "fade")
         first, second, third = found["scenes"]
-        self.assertEqual((first["kind"], first["motion"], first["focus"], first["fit"], first["text"]), ("image", "still", (0.5, 0.5), "cover", None))
+        self.assertEqual((first["kind"], first["motion"], first["focus"], first["fit"], first["text"]), ("image", "still", (0.5, 0.5), "cover", None))  # a 9:16 card
         self.assertEqual(first["path"], self.path("cards", "a.png"))
         self.assertEqual((second["motion"], second["focus"], second["fit"], second["text"]), ("pan-left", (0.2, 0.9), "contain", "A line"))
         self.assertEqual((third["kind"], third["trim"], third["seconds"]), ("clip", (2.0, 6.5), 4.5))  # a clip's length is its trim
+
+    def test_a_picture_of_another_shape_is_shown_whole_unless_the_plan_says_cover(self):
+        """A 1080 x 1350 picture covering the 1080 x 1920 frame would lose 456 pixels each side: its words. So `fit` is `contain`
+        unless the picture is the frame's own 9:16 shape, and "cover" stays what a plan can ask for."""
+        shapes = {"card": (1080, 1920, "cover"), "a chart": (1080, 1350, "contain"), "a square": (1080, 1080, "contain"),
+                  "a landscape": (1920, 1080, "contain"), "a 3:4 photo": (1500, 2000, "contain"), "a 9:16 phone video frame": (720, 1280, "cover"),
+                  "nearly 9:16": (1000, 1800, "cover"), "9:19.5": (1080, 2340, "contain")}
+        for label, (width, height, fit) in shapes.items():
+            with self.subTest(label):
+                self.picture("pictures", "p.png", width=width, height=height)
+                path = self.json_file("plan.json", {"scenes": [{"image": "pictures/p.png", "seconds": 4}]})
+                self.assertEqual(edit.read_plan(path)["scenes"][0]["fit"], fit)
+                self.assertEqual(edit.default_fit(width, height), fit)
+        self.picture("pictures", "p.png", width=1080, height=1350)
+        for given in ("cover", "contain"):  # what the plan says wins
+            path = self.json_file("plan.json", {"scenes": [{"image": "pictures/p.png", "seconds": 4, "fit": given}]})
+            self.assertEqual(edit.read_plan(path)["scenes"][0]["fit"], given)
+
+    def test_a_clip_is_always_cover_and_a_picture_that_cannot_be_read_is_refused(self):
+        self.touch("c.mp4", data=test_media.ftyp() + test_media.video_moov(6000) + test_media.mdat())
+        self.assertEqual(edit.read_plan(self.json_file("plan.json", {"scenes": [{"clip": "c.mp4", "seconds": 3}]}))["scenes"][0]["fit"], "cover")
+        for name, data in (("p.gif", b"GIF89a"), ("p.png", b"not a picture"), ("p.png", b"")):
+            self.touch("pictures", name, data=data)
+            path = self.json_file("plan.json", {"scenes": [{"image": "pictures/" + name, "seconds": 4}]})
+            with self.assertRaises(edit.InputError) as caught:
+                edit.read_plan(path)
+            self.assertIn("can't read the picture", str(caught.exception))
 
     def test_every_rule_is_named_when_it_is_broken(self):
         good = {"image": "cards/a.png", "seconds": 4}
@@ -138,7 +169,7 @@ class Plans(Folder):
                 self.assertIn("scene 1", str(caught.exception))
 
     def test_a_clip_that_only_looks_like_an_mp4_is_refused_before_anything_runs(self):
-        self.touch("cards", "a.png")
+        self.picture("cards", "a.png")
         look_alikes = {
             "an HLS playlist": b"#EXTM3U\n#EXT-X-VERSION:3\n#EXTINF:4,\nhttp://example.com/segment.ts\n",
             "a playlist of a local file": b"#EXTM3U\n#EXTINF:1,\n/etc/hostname\n",
@@ -163,7 +194,7 @@ class Plans(Folder):
                 edit.read_plan(path)
 
     def test_the_plan_itself_is_checked(self):
-        self.touch("cards", "a.png")
+        self.picture("cards", "a.png")
         for document, why in (({"scenes": []}, "1 to"), ({"scenes": "x"}, "1 to"), ({}, "scenes"), ({"scenes": [], "extra": 1}, "scenes"),
                               ({"scenes": [{"image": "cards/a.png", "seconds": 2}], "transition": "wipe"}, "transition"), ([], "scenes")):
             with self.subTest(document):
@@ -259,37 +290,76 @@ class Motion(unittest.TestCase):
         for progress in (0, 0.5, 1):
             self.assertEqual(edit.motion_box("still", progress, self.SIZE, (0.2, 0.8)), (0.0, 0.0, 1350.0, 2400.0))
 
-    def test_a_zoom_goes_from_the_whole_picture_to_1_12_times_in(self):
+    def test_a_zoom_goes_from_the_whole_picture_in_to_the_most_the_safe_area_allows(self):
         start = edit.motion_box("zoom-in", 0.0, self.SIZE, (0.5, 0.5))
         end = edit.motion_box("zoom-in", 1.0, self.SIZE, (0.5, 0.5))
         self.assertEqual(start, (0.0, 0.0, 1350.0, 2400.0))
-        self.assertAlmostEqual(end[2] - end[0], 1350 / 1.12)
-        self.assertAlmostEqual(end[3] - end[1], 2400 / 1.12)
+        zoom = 1350 / (end[2] - end[0])
+        self.assertAlmostEqual(zoom, edit.zoom_limit())
+        self.assertLess(zoom, edit.ZOOM_MAX)  # the cards' words span 88% of their width: 1.12 times would push them off
+        self.assertGreater(zoom, 1.10)
+        self.assertAlmostEqual(2400 / (end[3] - end[1]), zoom)
         self.assertEqual(edit.motion_box("zoom-out", 0.0, self.SIZE, (0.5, 0.5)), end)
         self.assertEqual(edit.motion_box("zoom-out", 1.0, self.SIZE, (0.5, 0.5)), start)
         widths = [edit.motion_box("zoom-in", n / 50, self.SIZE, (0.5, 0.5))[2] - edit.motion_box("zoom-in", n / 50, self.SIZE, (0.5, 0.5))[0] for n in range(51)]
         self.assertEqual(widths, sorted(widths, reverse=True))
 
-    def test_a_zoom_heads_to_the_focus(self):
-        end = edit.motion_box("zoom-in", 1.0, self.SIZE, (0.0, 0.0))
-        self.assertEqual(end[:2], (0.0, 0.0))  # a corner: the box is pushed back inside the picture
-        end = edit.motion_box("zoom-in", 1.0, self.SIZE, (1.0, 1.0))
-        self.assertAlmostEqual(end[2], 1350.0)
-        self.assertAlmostEqual(end[3], 2400.0)
-        left = edit.motion_box("zoom-in", 1.0, self.SIZE, (0.3, 0.5))
-        right = edit.motion_box("zoom-in", 1.0, self.SIZE, (0.7, 0.5))
+    def test_a_zoom_heads_to_the_focus_as_far_as_the_safe_area_allows(self):
+        left = edit.motion_box("zoom-in", 0.4, self.SIZE, (0.3, 0.5))
+        right = edit.motion_box("zoom-in", 0.4, self.SIZE, (0.7, 0.5))
         self.assertLess(left[0], right[0])
+        # at its limit the words fill the frame's width: there is no room to head sideways, whatever the focus
+        ends = {round(edit.motion_box("zoom-in", 1.0, self.SIZE, f)[0], 6) for f in ((0, 0), (1, 1), (0.3, 0.5), (0.5, 0.5), (1, 0.2))}
+        self.assertEqual(len(ends), 1)
 
-    def test_a_pan_moves_8_percent_along_its_axis_at_1_10_times(self):
-        for motion, axis, sign in (("pan-left", 0, -1), ("pan-right", 0, 1), ("pan-up", 1, -1), ("pan-down", 1, 1)):
+    def test_a_pan_moves_along_its_axis_by_at_most_6_percent_sideways_and_8_up_or_down_at_a_zoom_that_leaves_room(self):
+        for motion, axis, sign, most in (("pan-left", 0, -1, 0.06), ("pan-right", 0, 1, 0.06), ("pan-up", 1, -1, 0.08), ("pan-down", 1, 1, 0.08)):
             with self.subTest(motion):
                 start = edit.motion_box(motion, 0.0, self.SIZE, (0.5, 0.5))
                 end = edit.motion_box(motion, 1.0, self.SIZE, (0.5, 0.5))
                 size = self.SIZE[axis]
-                self.assertAlmostEqual(end[axis] - start[axis], sign * 0.08 * size, places=6)
-                self.assertAlmostEqual(end[2 + axis] - end[axis], size / 1.10)
+                moved = (end[axis] - start[axis]) * sign
+                self.assertGreater(moved, 0.03 * size)  # it moves, in the direction its name says
+                self.assertLessEqual(moved, most * size + 1e-6)
+                zoom = size / (end[2 + axis] - end[axis])
+                self.assertLessEqual(zoom, edit.PAN_ZOOM + 1e-9)
+                self.assertLess(zoom, edit.PAN_ZOOM)  # a smaller zoom than the design's 1.10, so the travel fits
                 other = 1 - axis
                 self.assertAlmostEqual(end[other], start[other])  # the other axis doesn't move
+
+    def test_the_safe_area_stays_in_view_clear_of_the_signature_and_the_captions_for_every_motion_and_focus(self):
+        """Where the templates put their words (SAFE_AREA, as fractions of the picture) lands, in the frame, in from the sides, below
+        the signature's pill and above the captions' band, at every moment of every motion, whatever the focus (the edges included)."""
+        width, height = self.SIZE
+        left, top, right, bottom = edit.SAFE_AREA
+        clear = edit.KEEP_CLEAR
+        foci = [(x / 4.0, y / 4.0) for x in range(5) for y in range(5)]
+        for motion in edit.MOTIONS:
+            for focus in foci:
+                for n in range(0, 41):
+                    x0, y0, x1, y1 = edit.motion_box(motion, n / 40.0, self.SIZE, focus)
+                    with self.subTest(motion=motion, focus=focus, n=n):
+                        box_w, box_h = (x1 - x0) / width, (y1 - y0) / height
+                        mapped = ((left - x0 / width) / box_w, (top - y0 / height) / box_h, (right - x0 / width) / box_w, (bottom - y0 / height) / box_h)
+                        self.assertGreaterEqual(mapped[0], clear[0] - 1e-9)
+                        self.assertGreaterEqual(mapped[1], clear[1] - 1e-9)
+                        self.assertLessEqual(mapped[2], clear[2] + 1e-9)
+                        self.assertLessEqual(mapped[3], clear[3] + 1e-9)
+
+    def test_the_keep_clear_lines_are_the_frames_signature_and_caption_places(self):
+        # the pill is drawn at 56 to about 117 px of 1920, the captions' band starts at 1614 px (two lines, the largest size)
+        self.assertLess(117 / 1920.0, edit.KEEP_CLEAR[1])
+        self.assertGreater(1614 / 1920.0, edit.KEEP_CLEAR[3])
+        # and the cards' templates keep their words inside SAFE_AREA
+        for kind in ("title", "fact", "list", "quote", "sources"):
+            with open(os.path.join(EXPLAINER, "..", "assets", "templates", "card-%s.json" % kind), encoding="utf-8") as f:
+                template = json.load(f)
+            for text in template["texts"]:
+                x0, y0, x1, y1 = text["box"]
+                self.assertGreaterEqual(x0, edit.SAFE_AREA[0] - 1e-9, (kind, text["slot"]))
+                self.assertGreaterEqual(y0, edit.SAFE_AREA[1] - 1e-9, (kind, text["slot"]))
+                self.assertLessEqual(x1, edit.SAFE_AREA[2] + 1e-9, (kind, text["slot"]))
+                self.assertLessEqual(y1, edit.SAFE_AREA[3] + 1e-9, (kind, text["slot"]))
 
     def test_the_box_always_stays_inside_the_picture_and_keeps_its_proportions(self):
         for motion in edit.MOTIONS:
@@ -341,7 +411,7 @@ class Exits(Folder):
     """The command's refusals, before any picture is drawn: they need no Pillow and no FFmpeg."""
 
     def setup_files(self, seconds=10.0, codec=b"mp4a"):
-        self.touch("cards", "a.png")
+        self.picture("cards", "a.png")
         plan = self.json_file("plan.json", {"scenes": [{"image": "cards/a.png", "seconds": 3}, {"image": "cards/a.png", "seconds": 3}]})
         audio = self.m4a("n.m4a", seconds, codec)
         captions = self.json_file("captions.json", {"cues": [{"start": 0.3, "end": 1.2, "lines": ["Hello"]}]})
@@ -583,6 +653,32 @@ class Drawing(UsesTheExplainersDrawingModule):
             self.assertEqual((output["width"], output["height"]), (1080, 1920))
             info = media.inspect(output["path"])
             self.assertEqual(media.problems(info, "image", budget=False), [])
+
+    def test_a_chart_shaped_picture_keeps_its_edges_by_default_and_loses_them_only_when_cover_is_asked_for(self):
+        from PIL import Image
+
+        picture = Image.new("RGB", (1080, 1350), (240, 240, 240))
+        for x in range(24):
+            for y in range(1350):
+                picture.putpixel((x, y), (200, 30, 30))  # a red strip at the left edge: the first letters of a line of words
+                picture.putpixel((1079 - x, y), (30, 30, 200))  # and a blue one at the right
+        self.picture("pictures", "chart.png", width=1080, height=1350)
+        picture.save(self.path("pictures", "chart.png"))
+        draw = sys.modules["hrizzup_draw"]
+        style = draw.load_style(None)
+        for fit, kept in (("", True), ("cover", False)):
+            scene = {"image": "pictures/chart.png", "seconds": 4}
+            if fit:
+                scene["fit"] = fit
+            plan = edit.read_plan(self.json_file("plan.json", {"scenes": [scene]}))["scenes"][0]
+            frame = edit.ImageScene(plan, style, draw).frame(0, 1)
+            self.assertEqual(frame.size, (1080, 1920))
+            with self.subTest(fit=fit or "(not given)"):
+                self.assertEqual(frame.getpixel((8, 800)) == (200, 30, 30), kept)  # the picture's own left edge is in the frame
+                self.assertEqual(frame.getpixel((1071, 800)) == (30, 30, 200), kept)
+                if kept:
+                    self.assertEqual(plan["fit"], "contain")
+                    self.assertEqual(frame.getpixel((540, 1700)), (255, 255, 255))  # the style's paper below it, where the captions go
 
     def test_a_text_too_long_for_its_card_exits_1_and_writes_no_card(self):
         path = self.json_file("cards.json", {"cards": [{"kind": "title", "title": "A fine title"}, {"kind": "title", "title": "W" * 90}]})

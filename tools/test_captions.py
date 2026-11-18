@@ -22,6 +22,7 @@ if SHARED not in sys.path:
 import importlib.util  # noqa: E402
 
 import catalogue  # noqa: E402,F401
+import test_media as built  # noqa: E402
 
 spec = importlib.util.spec_from_file_location("captions_cues_under_test", os.path.join(SHARED, "captions.py"))
 captions = importlib.util.module_from_spec(spec)
@@ -174,6 +175,11 @@ class Folder(unittest.TestCase):
             f.write(text)
         return self.path(name)
 
+    def m4a(self, name, seconds=9.0, codec=b"mp4a"):
+        """A synthetic .m4a with real boxes and a duration (nothing here plays it): what `--audio` must be."""
+        moov = built.box(b"moov", built.mvhd(1000, int(seconds * 1000)) + built.trak(b"soun", codec))
+        return self.write(name, built.ftyp(b"M4A ") + moov + built.mdat(), binary=True)
+
 
 class ParagraphTimes(Folder):
     def test_a_word_that_follows_a_pause_is_kept_inside_its_paragraph(self):
@@ -191,15 +197,37 @@ class ParagraphTimes(Folder):
         for unit in moved:
             self.assertLessEqual(unit["start"], unit["end"])
 
-    def test_the_timings_file_must_be_the_scripts(self):
-        good = self.write("t.json", json.dumps({"paragraphs": [{"index": 0, "start": 0.3, "end": 4.0}, {"index": 1, "start": 4.6, "end": 9.0}]}))
-        self.assertEqual(captions.read_paragraph_times(good, 2), [(0.3, 4.0), (4.6, 9.0)])
+    SCRIPT = "One two three.\n\nFour five six."
+
+    def timings(self, paragraphs=None, seconds=9.0):
+        paragraphs = paragraphs or [{"index": 0, "start": 0.3, "end": 4.0, "shown": "One two three."}, {"index": 1, "start": 4.6, "end": 9.0, "shown": "Four five six."}]
+        return self.write("t.json", json.dumps({"seconds": seconds, "paragraphs": paragraphs}))
+
+    def test_the_timings_file_must_be_the_scripts_and_the_narrations(self):
+        parsed = script.parse(self.SCRIPT)
+        self.assertEqual(captions.read_paragraph_times(self.timings(), parsed, 9.0), [(0.3, 4.0), (4.6, 9.0)])
+        self.assertEqual(captions.read_paragraph_times(self.timings(), parsed, 9.04), [(0.3, 4.0), (4.6, 9.0)])  # within 0.05 s of the audio's length
         with self.assertRaises(captions.InputError) as caught:
-            captions.read_paragraph_times(good, 3)
+            captions.read_paragraph_times(self.timings(), script.parse("One two three.\n\nFour five six.\n\nSeven."), 9.0)
         self.assertIn("another script", str(caught.exception))
-        for bad in ("{", "[]", json.dumps({"paragraphs": [{"start": "x", "end": 1}]}), json.dumps({"other": 1})):
+        for bad in ("{", "[]", json.dumps({"paragraphs": [{"start": "x", "end": 1, "shown": "a"}], "seconds": 1}), json.dumps({"other": 1})):
             with self.assertRaises(captions.InputError):
-                captions.read_paragraph_times(self.write("b.json", bad), 1)
+                captions.read_paragraph_times(self.write("b.json", bad), script.parse("a"), 1.0)
+
+    def test_timings_of_a_script_with_other_words_but_as_many_paragraphs_are_refused(self):
+        other = [{"index": 0, "start": 0.3, "end": 4.0, "shown": "One two three."}, {"index": 1, "start": 4.6, "end": 9.0, "shown": "Seven eight nine."}]
+        with self.assertRaises(captions.InputError) as caught:
+            captions.read_paragraph_times(self.timings(other), script.parse(self.SCRIPT), 9.0)
+        self.assertIn("paragraph 2", str(caught.exception))
+        self.assertIn("another script", str(caught.exception))
+
+    def test_timings_of_another_narration_are_refused(self):
+        parsed = script.parse(self.SCRIPT)
+        for audio in (9.06, 8.9, 61.1):
+            with self.subTest(audio=audio):
+                with self.assertRaises(captions.InputError) as caught:
+                    captions.read_paragraph_times(self.timings(), parsed, audio)
+                self.assertIn("another narration", str(caught.exception))
 
 
 class Arguments(Folder):
@@ -207,7 +235,7 @@ class Arguments(Folder):
         return captions.make_parser().parse_args(list(argv))
 
     def files(self):
-        return self.write("n.m4a", b"audio", binary=True), self.write("script.txt", "Hello there.")
+        return self.m4a("n.m4a"), self.write("script.txt", "Hello there.")
 
     def test_the_defaults(self):
         audio, script_path = self.files()
@@ -238,6 +266,39 @@ class Arguments(Folder):
                 captions.check_arguments(args)
             self.assertIn("overwrite", str(caught.exception) + "overwrite" if "srt" in " ".join(argv) else str(caught.exception))
 
+    def test_the_narration_must_be_an_aac_m4a_or_mp4_read_by_the_repositorys_own_parser(self):
+        """`--audio` goes to PyAV, which follows a playlist and opens any container it knows: it is read here first."""
+        script_path = self.write("script.txt", "Hello there.")
+        playlist = b"#EXTM3U\n#EXTINF:1,\nhttp://example.com/a.aac\n"
+        looks = {
+            "a playlist": self.write("list.m4a", playlist, binary=True), "a playlist named .m3u8": self.write("list.m3u8", playlist, binary=True),
+            "a playlist named .mp4": self.write("list.mp4", playlist, binary=True), "an mp3": self.write("n.mp3", b"ID3" + bytes(64), binary=True),
+            "a wav": self.write("n.wav", b"RIFF" + bytes(40), binary=True), "junk named .m4a": self.write("junk.m4a", b"audio", binary=True),
+            "an empty .m4a": self.write("empty.m4a", b"", binary=True), "ALAC sound": self.m4a("alac.m4a", codec=b"alac"),
+            "a video with no sound": self.write("silent.mp4", built.ftyp() + built.box(b"moov", built.mvhd(1000, 9000) + built.trak(b"vide", b"avc1", 1080, 1920)) + built.mdat(), binary=True),
+        }
+        for label, path in looks.items():
+            with self.subTest(label):
+                args = self.parse("--audio", path, "--script", script_path, "--out", self.path("c.json"))
+                with self.assertRaises(captions.InputError) as caught:
+                    captions.check_arguments(args)
+                self.assertIn("--audio", str(caught.exception))
+                with mock.patch.object(captions, "listen") as listening:  # and nothing is listened to
+                    code, line, _err = run_main(["--audio", path, "--script", script_path, "--out", self.path("c.json")])
+                self.assertEqual((code, line["ok"]), (2, False))
+                listening.assert_not_called()
+        good = self.m4a("good.m4a", 9.0)
+        _out, _srt, seconds = captions.check_arguments(self.parse("--audio", good, "--script", script_path, "--out", self.path("c.json")))
+        self.assertEqual(seconds, 9.0)
+        mp4 = self.write("v.mp4", built.ftyp() + built.video_moov(9000) + built.mdat(), binary=True)  # a video with AAC sound
+        self.assertEqual(captions.check_arguments(self.parse("--audio", mp4, "--script", script_path, "--out", self.path("c.json")))[2], 9.0)
+
+    def test_the_help_names_only_the_formats_it_takes(self):
+        text = captions.make_parser().format_help()
+        self.assertNotIn(".mp3", text)
+        self.assertNotIn(".wav", text)
+        self.assertIn(".m4a", text)
+
     def test_a_missing_audio_or_script_is_bad_input_with_the_json_line(self):
         code, line, _err = run_main(["--audio", self.path("none.m4a"), "--script", self.path("none.txt"), "--out", self.path("c.json")])
         self.assertEqual((code, line["ok"]), (2, False))
@@ -249,9 +310,9 @@ class Listening(Folder):
 
     SCRIPT = "Readings in {AQI|A Q I} passed 450 today.\n\nSchools in Noida stay open."
 
-    def setup_run(self, heard, seconds=9.0, packages=True):
-        audio = self.write("n.m4a", b"audio", binary=True)
-        script_path = self.write("script.txt", self.SCRIPT)
+    def setup_run(self, heard, seconds=9.0, packages=True, script_text=None):
+        audio = self.m4a("n.m4a", seconds)
+        script_path = self.write("script.txt", script_text or self.SCRIPT)
         patches = [
             mock.patch.object(captions, "ensure_model", lambda *a, **k: self.dir),
             mock.patch.object(captions, "listen", lambda *a, **k: ([script.Heard(*h) for h in heard], seconds)),
@@ -272,6 +333,7 @@ class Listening(Folder):
         self.assertTrue(line["ok"])
         self.assertEqual([o["path"] for o in line["outputs"]], [self.path("captions.json"), self.path("captions.srt")])
         self.assertEqual(line["checks"][0]["wordErrorRate"], 0.0)
+        self.assertEqual(line["checks"][0]["differences"], [])
         with open(self.path("captions.json"), encoding="utf-8") as f:
             document = json.load(f)
         self.assertEqual(document["wordErrorRate"], 0.0)
@@ -299,18 +361,105 @@ class Listening(Folder):
         code, line, _err = run_main(self.setup_run(wrong) + ["--max-wer", "0.1"])
         self.assertEqual(code, 1)
         self.assertFalse(line["ok"])
-        self.assertIn("said 'four', heard 'five'", line["problem"])  # 450 is four hundred fifty, and 500 five hundred
-        self.assertIn("said 'noida', heard 'noyda'", line["problem"])
-        self.assertIn("{shown|spoken}", line["problem"])
+        self.assertIn("said '450' (four hundred fifty), heard 'five hundred'", line["problem"])  # a number heard as another
+        self.assertIn("said 'Noida', heard 'noyda'", line["problem"])
+        self.assertIn("said 'open.', heard 'shut'", line["problem"])
+        self.assertIn("a number was heard as another", line["problem"])
+        self.assertIn("the voice itself says it wrong", line["problem"])
+        self.assertIn("the recogniser's spelling, not the voice: leave it", line["problem"])
+        self.assertEqual(len(line["checks"][0]["differences"]), 3)  # every difference is in the checks, on a fail too
         self.assertFalse(line["checks"][0]["ok"])
         self.assertFalse(os.path.exists(self.path("captions.json")) or os.path.exists(self.path("captions.srt")))
 
     def test_the_limit_is_the_callers_to_move(self):
         wrong = list(self.GOOD)
-        wrong[4] = ("500", 1.9, 3.0)
+        wrong[5] = ("tonight", 3.0, 3.5)  # one word of 11 changed: a rate of 0.09
         argv = self.setup_run(wrong)
         self.assertEqual(run_main(argv + ["--max-wer", "0.05"])[0], 1)
-        self.assertEqual(run_main(argv + ["--max-wer", "0.3"])[0], 0)
+        self.assertEqual(run_main(argv + ["--max-wer", "0.15"])[0], 0)
+
+    # ---- the gate exists to catch the voice failing: a sentence skipped, a number said wrong ----
+    LONG = ("Before dawn on Monday readings in Delhi and Noida passed 450, the worst of the season so far. "
+            "Doctors advise people with breathing problems to stay indoors. "
+            "The emergency rules stop building work and keep diesel trucks out of Delhi.\n\n"
+            "On Tuesday a correction said only primary schools have moved online. Schools in Noida stay open.")
+
+    def long_heard(self, drop=None, change=None, drop_tail=0):
+        words = []
+        clock = 0.3
+        for word in self.LONG.replace("\n\n", " ").split():
+            words.append([word, clock, clock + 0.3])
+            clock += 0.35
+        if change:
+            for number, word in enumerate(words):
+                if word[0].rstrip(",.") == change[0]:
+                    words[number][0] = change[1]
+        if drop:
+            words = [w for w in words if w[0] not in drop]
+        if drop_tail:
+            words = words[:-drop_tail]
+        return [tuple(w) for w in words], clock + 1.0
+
+    def test_a_dropped_sentence_fails_even_when_the_word_error_rate_is_under_the_limit(self):
+        heard, seconds = self.long_heard(drop_tail=5)  # the last sentence ("Schools in Noida stay open."), five words of fifty-six
+        code, line, _err = run_main(self.setup_run(heard, seconds, script_text=self.LONG))
+        self.assertEqual(code, 1, line)
+        rate = line["checks"][0]["wordErrorRate"]
+        self.assertLess(rate, 0.15)  # a rate that would pass, were it not for the run of missing words
+        self.assertGreaterEqual(line["checks"][0]["longestRunNotHeard"], 3)
+        self.assertIn("script words in a row weren't heard", line["problem"])
+        self.assertNotIn("word error rate", line["problem"].split("Where they part")[0])
+        self.assertIn("heard nothing there", line["problem"])
+        self.assertFalse(os.path.exists(self.path("captions.json")))
+
+    def test_two_words_in_a_row_not_heard_are_a_name_or_two_not_a_failure(self):
+        heard, seconds = self.long_heard(drop={"Delhi", "and"})
+        code, line, _err = run_main(self.setup_run(heard, seconds, script_text=self.LONG))
+        self.assertEqual(code, 0, line)
+        self.assertEqual(line["checks"][0]["longestRunNotHeard"], 2)
+
+    def test_a_number_heard_as_a_different_number_fails_however_few_words_it_is(self):
+        heard, seconds = self.long_heard(change=("450", "500"))
+        code, line, _err = run_main(self.setup_run(heard, seconds, script_text=self.LONG))
+        self.assertEqual(code, 1, line)
+        self.assertLess(line["checks"][0]["wordErrorRate"], 0.15)  # one word of thirty-odd: the rate alone would pass it
+        self.assertEqual(line["checks"][0]["numbersHeardWrong"], ["said '450,' (four hundred fifty), heard 'five hundred'"])
+        self.assertIn("a number was heard as another", line["problem"])
+
+    def test_a_number_heard_in_either_way_of_writing_it_passes(self):
+        for written in ("450", "four hundred fifty", "four hundred and fifty"):
+            heard, seconds = self.long_heard(change=("450", written))
+            code, line, _err = run_main(self.setup_run(heard, seconds, script_text=self.LONG))
+            self.assertEqual(code, 0, (written, line))
+
+    def test_a_name_that_is_respelt_is_heard_either_way(self):
+        text = "This is a sample made from {Hrizzup's|Hrizz-up's} example story. It has some more words in it to read aloud."
+        spoken = text.replace("{Hrizzup's|Hrizz-up's}", "Hrizz up's")
+        for label, wording in (("as shown", text.replace("{Hrizzup's|Hrizz-up's}", "Hrizzup's")), ("as spoken", spoken)):
+            words = wording.split()
+            heard = [(w, 0.3 + 0.3 * n, 0.5 + 0.3 * n) for n, w in enumerate(words)]
+            code, line, _err = run_main(self.setup_run(heard, 8.0, script_text=text))
+            with self.subTest(label):
+                self.assertEqual(code, 0, line)
+                self.assertEqual(line["checks"][0]["differences"], [])
+
+    def test_a_name_neither_way_costs_one_word_not_two(self):
+        text = "This is a sample made from {Hrizzup's|Hrizz-up's} example story. It has some more words in it to read aloud."
+        words = text.replace("{Hrizzup's|Hrizz-up's}", "H. Rezaup's").split()
+        heard = [(w, 0.3 + 0.3 * n, 0.5 + 0.3 * n) for n, w in enumerate(words)]
+        code, line, _err = run_main(self.setup_run(heard, 8.0, script_text=text))
+        self.assertEqual(code, 0, line)
+        self.assertEqual(line["checks"][0]["differences"], ["said \"Hrizzup's\", heard \"h rezaup's\""])  # every difference, on a pass too
+        self.assertEqual(line["checks"][0]["scriptWords"], 19)  # the name is one of the script's words, not two
+        self.assertAlmostEqual(line["checks"][0]["wordErrorRate"], 1 / 19, places=3)
+
+    def test_every_difference_is_in_the_checks_on_a_pass_and_in_the_captions_file(self):
+        heard, seconds = self.long_heard(change=("Noida", "Noyda"))
+        code, line, _err = run_main(self.setup_run(heard, seconds, script_text=self.LONG))
+        self.assertEqual(code, 0, line)
+        self.assertEqual(len(line["checks"][0]["differences"]), 2)  # Noida appears twice
+        with open(self.path("captions.json"), encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["differences"], line["checks"][0]["differences"])
 
     def test_words_that_were_not_heard_are_placed_between_their_neighbours_and_flagged(self):
         missing = [h for h in self.GOOD if h[0] != "stay"]
@@ -340,7 +489,8 @@ class Listening(Folder):
 
     def test_the_command_uses_them_and_says_so(self):
         argv = self.setup_run(self.GOOD)
-        timings = self.write("timings.json", json.dumps({"paragraphs": [{"index": 0, "start": 1.1, "end": 3.2}, {"index": 1, "start": 5.2, "end": 6.9}]}))
+        timings = self.write("timings.json", json.dumps({"seconds": 9.0, "paragraphs": [
+            {"index": 0, "start": 1.1, "end": 3.2, "shown": "Readings in AQI passed 450 today."}, {"index": 1, "start": 5.2, "end": 6.9, "shown": "Schools in Noida stay open."}]}))
         code, line, _err = run_main(argv + ["--timings", timings])
         self.assertEqual(code, 0, line)
         with open(os.path.join(self.dir, "captions.json"), encoding="utf-8") as f:
@@ -349,9 +499,17 @@ class Listening(Folder):
         first = document["words"][0]
         self.assertEqual(first["start"], 1.1)  # Readings was heard at 0.4, before the paragraph was spoken
         self.assertEqual(document["words"][6]["start"], 5.2)  # and Schools, heard at 5.0, waits for its paragraph
-        code, line, _err = run_main(argv + ["--timings", self.write("t2.json", json.dumps({"paragraphs": []}))])
+        code, line, _err = run_main(argv + ["--timings", self.write("t2.json", json.dumps({"seconds": 9.0, "paragraphs": []}))])
         self.assertEqual(code, 2)
         self.assertIn("another script", line["problem"])
+        other = json.dumps({"seconds": 9.0, "paragraphs": [{"index": 0, "start": 1.1, "end": 3.2, "shown": "Other words."}, {"index": 1, "start": 5.2, "end": 6.9, "shown": "Schools in Noida stay open."}]})
+        code, line, _err = run_main(argv + ["--timings", self.write("t3.json", other)])  # as many paragraphs, not this script's words
+        self.assertEqual(code, 2)
+        self.assertIn("paragraph 1", line["problem"])
+        later = json.dumps({"seconds": 12.0, "paragraphs": [{"index": 0, "start": 1.1, "end": 3.2, "shown": "Readings in AQI passed 450 today."}, {"index": 1, "start": 5.2, "end": 6.9, "shown": "Schools in Noida stay open."}]})
+        code, line, _err = run_main(argv + ["--timings", self.write("t4.json", later)])  # this script's, another narration's
+        self.assertEqual(code, 2)
+        self.assertIn("another narration", line["problem"])
         code, line, _err = run_main(argv + ["--timings", os.path.join(self.dir, "none.json")])
         self.assertEqual(code, 2)
 

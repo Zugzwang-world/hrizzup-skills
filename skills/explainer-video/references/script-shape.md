@@ -26,7 +26,7 @@ Write plain paragraphs separated by a blank line, five to seven of them. The voi
 ## Writing for the voice
 
 - **Short sentences,** one idea each. Numbers as digits ("450"): the voice says "four hundred fifty".
-- **Acronyms and names the voice may misread** get a spoken form: `{AQI|A Q I}`, `{NCR|N C R}`. The captions and the transcript show the left side; the voice says the right.
+- **Respell only what the voice itself misreads.** A word with two forms, `{shown|spoken}`, is shown (in the transcript, the post and the captions) as the left side and said as the right: `{Gurugram|Goo-roo-gram}`. Acronyms such as AQI and NCR the voice spells out by itself, so they need none. Listen to the narration, or read what a recogniser hears in it with no prompt, and change a word only if the voice said it wrong. A recogniser (the check's Whisper) spells names its own way ("Guru Graham" for Gurugram): when every word the check lists is a name the voice said right, that is the recogniser, not the voice: leave it. The check fails when the voice skips or garbles speech: three or more words in a row not heard, a number heard as another, or too many words changed.
 - **No links, no symbols, no tables.** Links go in the post's `sources`.
 - **Times and dates as you say them:** "before dawn on Monday", "until Friday".
 - **English only for now:** the voice and the fonts read English (Latin letters).
@@ -45,7 +45,7 @@ Write plain paragraphs separated by a blank line, five to seven of them. The voi
 - [ ] Every fact, number and time is in an update, with its unit and place; a correction is said and shown.
 - [ ] What isn't confirmed is its own paragraph, and nothing in it is a guess.
 - [ ] 110 to 145 words, five to seven paragraphs, a scene for each idea, the last scene at least a second long.
-- [ ] No link read aloud; acronyms and names the voice may misread have a spoken form.
+- [ ] No link read aloud; only a word the voice itself misreads has a spoken form (`{shown|spoken}`); names the recogniser spells its own way are left alone.
 - [ ] After `voice.py`: the length is at most 57 seconds and the loudness is in range. After `captions.py`: the word error rate passed, and the captions show the script's words.
 - [ ] After `edit.py`: frames from the start, the middle and the end of each scene show the picture, the signature and the caption, and nothing is cut off.
 - [ ] The post's `body` is at most 1,000 characters, the `transcript` is the script's shown text, and the still has a `description`.

@@ -189,5 +189,105 @@ class Comparing(unittest.TestCase):
         self.assertTrue(all(times[k][1] <= times[k + 1][0] + 1e-9 for k in range(2)))
 
 
+def compare(text, heard):
+    parsed = script.parse(text)
+    return script.compare(parsed.units(), script.normalise(heard))
+
+
+class TheGate(unittest.TestCase):
+    """Did the voice say the script? A word with two forms and a number are one word each; a number heard as another number, or three
+    words in a row not heard, fail whatever the word error rate."""
+
+    def test_a_perfect_reading_has_no_differences(self):
+        found = compare("Readings in Delhi passed 450 today.", "readings in Delhi passed four hundred and fifty today")
+        self.assertEqual((found.errors, found.rate, found.differences(), found.problems(0.15)), (0, 0.0, [], []))
+        self.assertEqual(len(found.tokens), 6)  # 450 is one word
+
+    def test_a_word_with_two_forms_is_one_word_matched_by_either_form(self):
+        text = "Made from {Hrizzup's|Hrizz-up's} example story."
+        for heard in ("made from Hrizzup's example story", "Made from Hrizz up's example story", "made from hrizz-up's example story"):
+            with self.subTest(heard):
+                found = compare(text, heard)
+                self.assertEqual(found.errors, 0)
+                self.assertEqual(len(found.tokens), 5)  # the name is one of five words, not two or three
+        found = compare(text, "made from H. Rezaup's example story")
+        self.assertEqual(found.errors, 1)  # one word wrong, not two
+        self.assertEqual(found.differences(), ["said \"Hrizzup's\", heard \"h rezaup's\""])
+        self.assertAlmostEqual(found.rate, 0.2)
+
+    def test_the_two_forms_of_a_figure_are_one_word_too(self):
+        found = compare("It rose to {450|four hundred fifty} today.", "it rose to four hundred fifty today")
+        self.assertEqual(found.errors, 0)
+        self.assertEqual(found.numbers_heard_wrong(), [])
+
+    def test_a_number_heard_as_another_number_fails_however_few_words_it_is(self):
+        text = "Before dawn on Monday readings in Delhi and Noida passed 450, the worst of the season so far, and doctors advise people to stay in."
+        found = compare(text, "before dawn on Monday readings in Delhi and Noida passed 500 the worst of the season so far and doctors advise people to stay in")
+        self.assertLess(found.rate, 0.15)  # one word in twenty-five: the rate alone would pass it
+        self.assertEqual(found.numbers_heard_wrong(), ["said '450,' (four hundred fifty), heard 'five hundred'"])
+        self.assertEqual(len(found.problems(0.15)), 1)
+        self.assertIn("a number was heard as another", found.problems(0.15)[0])
+        for kind in ("3rd", "12.5%", "1,200"):
+            self.assertTrue(compare("It was %s today." % kind, "it was something else today").numbers_heard_wrong(), kind)
+        self.assertFalse(compare("It was Delhi today.", "it was something else today").numbers_heard_wrong())  # not a number
+        self.assertTrue(compare("It passed 450.", "it passed").numbers_heard_wrong())  # a number not heard at all
+
+    def test_three_words_in_a_row_not_heard_fail_and_two_do_not(self):
+        text = ("one two. three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen. "
+                "eighteen nineteen twenty twenty-one twenty-two twenty-three twenty-four.")
+        full = " ".join(text.replace(".", "").split())
+        dropped = full.replace("five six seven", "")
+        found = compare(text, dropped)
+        self.assertEqual(found.longest_unheard_run(), 3)
+        self.assertLess(found.rate, 0.15)
+        self.assertIn("3 script words in a row weren't heard", found.problems(0.15))
+        found = compare(text, full.replace("five six", ""))
+        self.assertEqual(found.longest_unheard_run(), 2)
+        self.assertEqual(found.problems(0.15), [])
+        # words that were changed, not dropped, are not heard either
+        found = compare(text, full.replace("five six seven", "cat dog fish"))
+        self.assertEqual(found.longest_unheard_run(), 3)
+
+    def test_the_word_error_rate_counts_changed_missing_and_added_words(self):
+        found = compare("alpha bravo charlie delta echo foxtrot golf hotel india juliet", "alpha xray charlie delta echo foxtrot golf hotel india juliet kilo")
+        self.assertEqual(found.errors, 2)  # one changed, one added
+        self.assertAlmostEqual(found.rate, 0.2)
+        self.assertIn("the word error rate 0.20 is over 0.15", found.problems(0.15))
+        self.assertEqual(found.problems(0.2), [])  # the limit is inclusive
+        self.assertEqual(found.differences(), ["said 'bravo', heard 'xray'", "heard 'kilo', which the script doesn't say"])
+
+    def test_every_difference_is_listed_with_nothing_left_out(self):
+        text = " ".join("w%d" % n for n in range(40))
+        heard = " ".join("w%d" % n if n % 3 else "z%d" % n for n in range(40))  # fourteen changed words
+        found = compare(text, heard)
+        self.assertEqual(len(found.differences()), 14)
+        self.assertEqual(found.errors, 14)
+
+    def test_adjacent_changed_words_are_one_difference(self):
+        found = compare("alpha bravo charlie delta echo foxtrot", "alpha xray yankee zulu echo foxtrot")
+        self.assertEqual(found.differences(), ["said 'bravo charlie delta', heard 'xray yankee zulu'"])
+        self.assertEqual(found.longest_unheard_run(), 3)
+
+    def test_spelled_letters_are_one_word(self):
+        for heard in ("the ncr and aqi", "the N C R and A Q I", "the N.C.R. and A.Q.I."):
+            found = compare("The N C R and AQI.", heard)
+            self.assertEqual(found.errors, 0, heard)
+            self.assertEqual(len(found.tokens), 4)
+
+    def test_a_hyphenated_word_is_one_word_heard_with_or_without_the_hyphen(self):
+        for heard in ("a one-minute brief", "a one minute brief"):
+            self.assertEqual(compare("A one-minute brief", heard).errors, 0)
+        self.assertEqual(len(compare("A one-minute brief", "a one minute brief").tokens), 3)
+
+    def test_nothing_heard_and_nothing_said(self):
+        found = compare("One two three four.", "")
+        self.assertEqual((found.errors, found.rate, found.longest_unheard_run()), (4, 1.0, 4))
+        self.assertEqual(found.differences(), ["said 'One two three four.', heard nothing there"])
+        self.assertEqual(script.compare([], []).rate, 0.0)
+
+    def test_the_old_helpers_still_work_on_plain_word_lists(self):
+        self.assertEqual(script.edit_distance(["a", "b"], ["a", "c"]), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

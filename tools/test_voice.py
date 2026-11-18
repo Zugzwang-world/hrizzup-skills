@@ -312,6 +312,11 @@ class Downloads(Folder):
     def model_path(self, name="model.bin"):
         return os.path.join(self.dir, "m", name)
 
+    def parts(self):
+        """Every part file in the models folder (a download in progress, or left behind)."""
+        folder = os.path.join(self.dir, "m")
+        return sorted(n for n in os.listdir(folder) if n.endswith(".part")) if os.path.isdir(folder) else []
+
     def both(self):
         for module in (voice, captions):
             with self.subTest(module=module.__name__):
@@ -338,7 +343,8 @@ class Downloads(Folder):
                 self.ensure(module, server)
             self.assertIn("SHA-256", str(caught.exception))
             self.assertEqual(len(server.calls), 1)  # the file has changed: another try would get the same
-            self.assertFalse(os.path.exists(self.model_path()) or os.path.exists(self.model_path() + ".part"))
+            self.assertFalse(os.path.exists(self.model_path()))
+            self.assertEqual(self.parts(), [])  # no part file is left behind
 
     def test_a_file_longer_than_expected_or_with_another_stated_size_is_refused(self):
         for module in self.both():
@@ -396,7 +402,7 @@ class Downloads(Folder):
                 self.ensure(module, Server(self.BODY, [error, error, error, whole]))
             self.assertIn("after 3 tries", str(caught.exception))
             self.assertEqual(self.sleeps, [5, 20])
-            self.assertFalse(os.path.exists(self.model_path() + ".part"))
+            self.assertEqual(self.parts(), [])
 
     def test_a_network_failure_is_retried_too(self):
         for module in self.both():
@@ -446,17 +452,83 @@ class Downloads(Folder):
                 self.assertEqual(f.read(), self.BODY)
             os.remove(self.model_path())
 
-    def test_a_part_left_by_an_earlier_run_is_not_trusted(self):
+    def test_a_part_left_by_another_run_is_not_trusted_and_not_touched(self):
         for module in self.both():
             os.makedirs(os.path.join(self.dir, "m"), exist_ok=True)
-            with open(self.model_path() + ".part", "wb") as f:
-                f.write(b"junk from an earlier run")
+            with open(self.model_path() + ".part", "wb") as f:  # what an older run, or one going on now, has under the old fixed name
+                f.write(b"junk from another run")
             server = Server(self.BODY, [whole])
             self.ensure(module, server)
-            self.assertEqual(server.calls[0][1], 0)
+            self.assertEqual(server.calls[0][1], 0)  # it started from nothing
             with open(self.model_path(), "rb") as f:
                 self.assertEqual(f.read(), self.BODY)
+            with open(self.model_path() + ".part", "rb") as f:
+                self.assertEqual(f.read(), b"junk from another run")  # and never wrote to, resumed from or deleted another run's file
             os.remove(self.model_path())
+            os.remove(self.model_path() + ".part")
+
+    def test_every_download_writes_a_part_file_of_its_own_so_two_first_runs_never_share_one(self):
+        for module in self.both():
+            seen = []
+
+            def watching(body, start, seen=seen):
+                response = Response(body)
+                real_read = response.read
+
+                def read(count):
+                    seen.append(self.parts())  # what part files exist while the bytes arrive
+                    return real_read(count)
+                response.read = read
+                return response
+
+            os.makedirs(os.path.join(self.dir, "m"), exist_ok=True)
+            self.ensure(module, Server(self.BODY, [watching]))
+            first = seen[0]
+            os.remove(self.model_path())
+            seen2 = []
+            self.ensure(module, Server(self.BODY, [lambda body, start: watching(body, start, seen2)]))
+            self.assertEqual(len(first), 1)
+            self.assertNotEqual(first[0], "model.bin.part")  # not a fixed name two runs would share
+            self.assertTrue(first[0].startswith("model.bin.") and first[0].endswith(".part"))
+            self.assertNotEqual(first, seen2[0])  # a different one each time
+            self.assertEqual(self.parts(), [])
+            os.remove(self.model_path())
+
+    def test_a_file_replaced_by_another_run_during_the_download_is_caught_before_the_folder_is_given_back(self):
+        for module in self.both():
+            real_replace = os.replace
+
+            def replace_then_corrupt(source, target):
+                real_replace(source, target)
+                with open(target, "r+b") as f:  # another run wrote a bad file over it
+                    f.seek(5)
+                    f.write(b"\xff\xfe")
+
+            with mock.patch.object(module.os, "replace", replace_then_corrupt):
+                with self.assertRaises(module.ModelError) as caught:
+                    self.ensure(module, Server(self.BODY, [whole]))
+            self.assertIn("doesn't check out", str(caught.exception))
+            self.assertIn("run the command again", str(caught.exception))
+            os.remove(self.model_path())
+
+    def test_every_file_of_a_model_is_checked_again_after_the_downloads(self):
+        body2 = b"second file" * 50
+        files = ((self.DIGEST, len(self.BODY), "model.bin"), (hashlib.sha256(body2).hexdigest(), len(body2), "other.bin"))
+        for module in self.both():
+            checked = []
+            real = module._is_good
+
+            def spy(path, digest, size, checked=checked, real=real):
+                checked.append(os.path.basename(path))
+                return real(path, digest, size)
+
+            server = Server(self.BODY, [whole, lambda b, st: Response(body2)])
+            with mock.patch.object(module, "_is_good", spy):
+                self.ensure(module, server, files=files)
+            self.assertEqual(checked[:2], ["model.bin", "other.bin"])  # what was wanted, before
+            self.assertEqual(checked[2:], ["model.bin", "other.bin"])  # and every file again, after
+            for name in ("model.bin", "other.bin"):
+                os.remove(self.model_path(name))
 
     def test_where_models_are_kept(self):
         for module in self.both():
@@ -489,7 +561,7 @@ class TheTwoCopies(unittest.TestCase):
             with open(os.path.join(SHARED, name + ".py"), encoding="utf-8") as f:
                 text = f.read()
             top = text[:text.index(self.START)]
-            for module in ("hashlib", "http.client", "os", "time", "urllib.error", "urllib.request"):
+            for module in ("hashlib", "http.client", "os", "tempfile", "time", "urllib.error", "urllib.request"):
                 self.assertRegex(top, r"(?m)^import %s$" % re.escape(module), (name, module))
 
     def test_no_script_is_left_with_a_placeholder(self):

@@ -13,9 +13,13 @@ no punctuation, numbers as words, spelled letters joined) and aligned; matched w
 are spread between their neighbours. The captions show the script's shown words, at most 2 lines of 32 characters, 0.8
 to 3.5 seconds a cue, broken at sentence ends and at pauses over 0.6 s.
 
-If the word error rate (words changed, added or dropped, over the words the script says) is above `--max-wer`, it exits 1
-and lists the words: the voice said something else, or the script has a word the voice reads in another way (use
-{shown|spoken}). The first run downloads the model (about 140 MiB, once, checked by its SHA-256) into
+The check exists to catch the voice failing: speech skipped or garbled. A `{shown|spoken}` counts as one word and matches when
+either form was heard, and so does a number. It fails (exit 1, nothing written) when the word error rate (words changed, added or
+missing, over the words the script says) is above `--max-wer`, when any number in the script was heard as another, or when
+three or more script words in a row weren't heard. Every difference is listed, on a pass too. Respell a word with
+{shown|spoken} only if the voice itself says it wrong (listen to the narration, or read what Whisper hears in it with no
+prompt); when every word listed is a name the voice said right, that is the recogniser's spelling, not the voice: leave it.
+The first run downloads the model (about 141 MiB, once, checked by its SHA-256) into
 $HRIZZUP_MODELS_DIR, else ~/.cache/hrizzup-skills/models; `--offline` never downloads.
 
 `--timings` takes the file `voice.py --timings` wrote: Whisper times a word that follows a pause a little early (its first
@@ -35,6 +39,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -161,11 +166,13 @@ def _download(url, part, digest, size):
 
 
 def _fetch(base, digest, size, name, folder, log):
-    """Download one model file into `folder`: to `<name>.part`, checked, then renamed. 3 tries, the pauses of TRY_PAUSES
-    apart; a try that stops short carries on from where it stopped."""
-    final, part = os.path.join(folder, name), os.path.join(folder, name + ".part")
+    """Download one model file into `folder`: to a part file of its own (a unique name in the same folder, so two runs fetching the
+    same model at once never write one file), checked, then renamed. 3 tries, the pauses of TRY_PAUSES apart; a try that stops
+    short carries on from where it stopped."""
+    final = os.path.join(folder, name)
+    handle, part = tempfile.mkstemp(prefix=name + ".", suffix=".part", dir=folder)
+    os.close(handle)
     log("downloading %s (%.1f MiB) from %s" % (name, size / 1048576, base.split("/")[2]))
-    _quietly_remove(part)  # a part left by an earlier run isn't trusted
     problem = "no try was made"
     for attempt in range(len(TRY_PAUSES) + 1):
         try:
@@ -181,9 +188,14 @@ def _fetch(base, digest, size, name, folder, log):
                 _quietly_remove(part)
                 raise ModelError("couldn't download %s: %s (the address is wrong or the file has moved)" % (name, problem))
             if error.code == 416:
-                _quietly_remove(part)  # a range that can't be had: start again
+                _quietly_remove(part)  # a range that can't be had: start again (a fresh, empty part)
+                handle, part = tempfile.mkstemp(prefix=name + ".", suffix=".part", dir=folder)
+                os.close(handle)
         except (urllib.error.URLError, OSError, TimeoutError, _Short, http.client.HTTPException) as error:
             problem = str(getattr(error, "reason", None) or error) or type(error).__name__
+        except BaseException:
+            _quietly_remove(part)  # an interrupt or a mistake: leave nothing behind
+            raise
         if attempt < len(TRY_PAUSES):
             log("%s: %s; trying again in %d s" % (name, problem, TRY_PAUSES[attempt]))
             time.sleep(TRY_PAUSES[attempt])
@@ -220,6 +232,9 @@ def ensure_model(folder_name, base, files, offline, log):
                 _fetch(base, digest, size, name, folder, log)
             except OSError as error:
                 raise ModelError("can't write %s into %s (%s)" % (name, folder, error.strerror or type(error).__name__))
+        for digest, size, name in files:  # every file is checked again before the folder is given back: another run may have written one
+            if not _is_good(os.path.join(folder, name), digest, size):
+                raise ModelError("%s in %s doesn't check out after the download (another run may have replaced it): run the command again" % (name, folder))
     return folder
 
 
@@ -256,13 +271,14 @@ def make_parser():
         description="Time a narration's words against its script and make the captions' cues (captions.json, and an .srt if asked).",
         epilog="Example: uv run scripts/captions.py --audio narration.m4a --script script.txt --out captions.json --srt captions.srt",
     )
-    parser.add_argument("--audio", required=True, help="the narration: an .m4a made by voice.py (an .mp3, .wav or .mp4 works too)")
+    parser.add_argument("--audio", required=True, help="the narration: an .m4a made by voice.py (an .mp4 with AAC sound works too)")
     parser.add_argument("--script", required=True, help="the script the voice read (never an input to be overwritten)")
     parser.add_argument("--out", required=True, help="the captions to write: a .json file")
     parser.add_argument("--srt", help="also write the cues as an .srt file")
-    parser.add_argument("--timings", help="the timings file voice.py wrote for this script: no word is shown before its paragraph is spoken or after it ends")
+    parser.add_argument("--timings", help="the timings file voice.py wrote for this script and this narration: no word is shown before its paragraph is spoken or after it ends")
     parser.add_argument("--max-wer", type=float, default=DEFAULT_MAX_WER,
-                        help="the largest word error rate to accept, 0 to 1 (default %.2f); over it the command exits 1 and lists the words" % DEFAULT_MAX_WER)
+                        help="the largest word error rate to accept, 0 to 1 (default %.2f); over it the command exits 1 and lists the words. "
+                             "A number heard as another, or three script words in a row not heard, fail whatever it is" % DEFAULT_MAX_WER)
     parser.add_argument("--offline", action="store_true", help="never download: stop, saying what to do, if the model isn't already in the models folder")
     return parser
 
@@ -273,6 +289,14 @@ def check_arguments(args):
     for name, path in (("--audio", args.audio), ("--script", args.script)):
         if not os.path.isfile(path):
             raise InputError("can't read %s %s: it isn't a file" % (name, path))
+    # The narration is read by this repository's own MP4 reader before anything else opens it (PyAV would follow a playlist
+    # or open any container it recognises): an .m4a or .mp4 with AAC sound, as `voice.py` makes.
+    try:
+        narration = hrizzup_media.inspect(args.audio)
+    except (hrizzup_media.MediaError, OSError) as error:
+        raise InputError("--audio %s isn't an .m4a or .mp4 narration (%s): make it with voice.py" % (args.audio, error))
+    if narration.audio_codec != "mp4a":
+        raise InputError("--audio %s has no AAC sound: the narration is an .m4a or .mp4 with AAC audio, as voice.py makes" % args.audio)
     out = os.path.abspath(args.out)
     srt = os.path.abspath(args.srt) if args.srt else None
     if os.path.splitext(out)[1].lower() != ".json":
@@ -292,7 +316,7 @@ def check_arguments(args):
         raise InputError("--out and --srt are the same file")
     if args.timings and not os.path.isfile(args.timings):
         raise InputError("can't read --timings %s: it isn't a file" % args.timings)
-    return out, srt
+    return out, srt, narration.seconds
 
 
 # ---------------------------------------------------------------------------------------------
@@ -393,17 +417,26 @@ def srt_text(cues):
 CLAMP_SLACK_SECONDS = 0.05  # the narration's start can differ from the voice's by the encoder's delay
 
 
-def read_paragraph_times(path, paragraphs):
-    """[(start, end)] for each paragraph, from the file `voice.py --timings` wrote. Raises InputError if it isn't for a script
-    with this many paragraphs."""
+def read_paragraph_times(path, script, audio_seconds):
+    """[(start, end)] for each paragraph, from the file `voice.py --timings` wrote. Raises InputError unless it is the timings of
+    this script (each paragraph's shown text is the script's) and of this narration (its length is within 0.05 s of the audio's)."""
     try:
         with open(path, encoding="utf-8") as f:
             document = json.load(f)
-        spans = [(float(p["start"]), float(p["end"])) for p in document["paragraphs"]]
+        paragraphs = document["paragraphs"]
+        spans = [(float(p["start"]), float(p["end"])) for p in paragraphs]
+        shown = [p["shown"] for p in paragraphs]
+        seconds = float(document["seconds"])
     except (OSError, UnicodeDecodeError, ValueError, KeyError, TypeError) as error:
         raise InputError("--timings %s isn't a timings file written by voice.py (%s: %s)" % (path, type(error).__name__, error))
-    if len(spans) != paragraphs:
-        raise InputError("--timings %s holds %d paragraphs and the script has %d: it is the timings of another script" % (path, len(spans), paragraphs))
+    if len(spans) != len(script.paragraphs):
+        raise InputError("--timings %s holds %d paragraphs and the script has %d: it is the timings of another script" % (path, len(spans), len(script.paragraphs)))
+    for number, (given, wanted) in enumerate(zip(shown, (p.shown for p in script.paragraphs)), 1):
+        if given != wanted:
+            raise InputError("--timings %s: paragraph %d isn't the script's: it is the timings of another script" % (path, number))
+    if abs(seconds - audio_seconds) > CLAMP_SLACK_SECONDS:
+        raise InputError("--timings %s is for a narration of %.2f s and the audio is %.2f s: it is the timings of another narration"
+                         % (path, seconds, audio_seconds))
     return spans
 
 
@@ -471,7 +504,7 @@ def main(argv=None):
 def make(argv=None):
     try:
         args = make_parser().parse_args(argv)
-        out, srt = check_arguments(args)
+        out, srt, audio_seconds = check_arguments(args)
         import hrizzup_script
 
         try:
@@ -481,7 +514,7 @@ def make(argv=None):
             raise InputError("can't read the script %s as UTF-8 text: %s" % (args.script, error))
         except hrizzup_script.ScriptError as error:
             raise InputError(str(error))
-        spans = read_paragraph_times(args.timings, len(script.paragraphs)) if args.timings else None
+        spans = read_paragraph_times(args.timings, script, audio_seconds) if args.timings else None
     except InputError as error:
         log("captions.py: %s" % error)
         return finish(False, [], [], str(error), 2)
@@ -505,14 +538,20 @@ def make(argv=None):
     said = hrizzup_script.spoken_words(units)
     said_words = [word for word, _ in said]
     heard_words = hrizzup_script.timed_words(heard)
-    rate = hrizzup_script.word_error_rate(said_words, [word for word, _s, _e in heard_words])
-    log("captions.py: word error rate %.3f over %d spoken words (the limit is %.2f)" % (rate, len(said_words), args.max_wer))
-    checks = [{"name": "the voice said the script (word error rate at most %.2f)" % args.max_wer, "ok": rate <= args.max_wer,
-               "wordErrorRate": round(rate, 3)}]
-    if rate > args.max_wer:
-        differing = hrizzup_script.differences(said_words, [word for word, _s, _e in heard_words])
-        message = ("the narration isn't the script: word error rate %.2f is over --max-wer %.2f. Where they part: %s. Fix the script, or "
-                   "give a word the way it is said with {shown|spoken}" % (rate, args.max_wer, "; ".join(differing)))
+    comparison = hrizzup_script.compare(units, [word for word, _s, _e in heard_words])
+    rate, problems, differences = comparison.rate, comparison.problems(args.max_wer), comparison.differences()
+    log("captions.py: word error rate %.3f over %d script words (the limit is %.2f); %d differences" % (
+        rate, len(comparison.tokens), args.max_wer, len(differences)))
+    for line in differences:
+        log("captions.py:   " + line)
+    checks = [{"name": "the voice said the script", "ok": not problems, "wordErrorRate": round(rate, 3), "maxWordErrorRate": args.max_wer,
+               "scriptWords": len(comparison.tokens), "numbersHeardWrong": comparison.numbers_heard_wrong(),
+               "longestRunNotHeard": comparison.longest_unheard_run(), "differences": differences}]
+    if problems:
+        message = ("the narration isn't the script: %s. Where they part: %s. Respell a word with {shown|spoken} only if the voice itself "
+                   "says it wrong (listen to the narration, or read what Whisper hears in it with no prompt); when every word listed is a "
+                   "name the voice said right, that is the recogniser's spelling, not the voice: leave it"
+                   % ("; ".join(problems), "; ".join(differences) or "nowhere in words"))
         log("captions.py: " + message)
         return finish(False, [], checks, message, 1)
     times = hrizzup_script.align_times(said_words, heard_words, seconds)
@@ -535,8 +574,8 @@ def make(argv=None):
         timed = clamp_to_paragraphs(timed, spans)
     cues = make_cues(timed, seconds)
     document = {"audio": os.path.basename(args.audio), "seconds": round(seconds, 3), "model": "Whisper base.en (faster-whisper)",
-                "wordErrorRate": round(rate, 3), "maxWordErrorRate": args.max_wer, "paragraphTimesFromVoice": bool(args.timings),
-                "cues": cues, "words": timed}
+                "wordErrorRate": round(rate, 3), "maxWordErrorRate": args.max_wer, "differences": differences,
+                "paragraphTimesFromVoice": bool(args.timings), "cues": cues, "words": timed}
     with open(out, "w", encoding="utf-8") as f:
         json.dump(document, f, indent=2, ensure_ascii=False)
         f.write("\n")

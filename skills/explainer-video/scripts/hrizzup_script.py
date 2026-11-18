@@ -295,6 +295,175 @@ def differences(said: Sequence[str], heard: Sequence[str], limit: int = 12) -> L
     return found
 
 
+# ---- the gate: did the voice say the script? (a word with two forms is one word; numbers and runs of missing words fail) ----
+
+NUMBER_UNIT = re.compile(r"^\W*\d[\d,]*(?:\.\d+)?(?:%|st|nd|rd|th)?\W*$", re.IGNORECASE)
+UNHEARD_RUN = 3  # this many script words in a row that weren't heard fail the gate, whatever the word error rate
+
+
+@dataclass
+class Token:
+    """One word of the script as the gate scores it: a plain word (a number is one word, and so is a hyphenated one), or a
+    `{shown|spoken}`, which is one word whichever of its two forms is heard."""
+
+    shown: str  # the script's own words for it, as shown
+    forms: List[List[str]]  # the normalised words it may be heard as: how it is spoken, then how it is shown if that differs
+    units: List[int]
+    number: bool  # a figure ("450", "12.5%", "3rd"): heard as another number, it fails the gate
+
+
+def script_tokens(units: Sequence[Unit]) -> List[Token]:
+    """The script's words as the gate scores them (see `Token`). Spelled letters side by side (N C R) are one word."""
+    flat = spoken_words(units)
+    tokens: List[Token] = []
+    i = 0
+    while i < len(flat):
+        j = i
+        while j < len(flat) and flat[j][1] == flat[i][1]:  # the words that come from the same units are one token
+            j += 1
+        covered = flat[i][1]
+        spoken = [word for word, _ in flat[i:j]]
+        forms = [spoken]
+        number = False
+        if len(covered) == 1:
+            unit = units[covered[0]]
+            if unit.shown != unit.spoken:
+                shown = [word for word, _ in _runs([(w, [0]) for w in _tokens(unit.shown)])]
+                if shown and shown != spoken:
+                    forms.append(shown)
+            number = bool(NUMBER_UNIT.match(unit.shown))
+        tokens.append(Token(" ".join(units[u].shown for u in covered), forms, covered, number))
+        i = j
+    return tokens
+
+
+@dataclass
+class Comparison:
+    """The script against what was heard, as a list of events in order: ("heard", token, words), ("changed", token, words: other
+    words were heard in its place), ("missing", token, []) and ("extra", None, words: heard words the script doesn't say)."""
+
+    tokens: List[Token]
+    events: List[Tuple[str, Optional[int], List[str]]]
+    errors: int
+
+    @property
+    def rate(self) -> float:
+        """Words changed, missing or added, over the words the script says (a `{shown|spoken}` and a number are one word)."""
+        if self.tokens:
+            return self.errors / len(self.tokens)
+        return 0.0 if not self.events else 1.0
+
+    def results(self) -> List[Tuple[str, List[str]]]:
+        """(status, heard words) for each script word, where status is "heard", "changed" or "missing"."""
+        by_token = {index: (status, words) for status, index, words in self.events if index is not None}
+        return [by_token[i] for i in range(len(self.tokens))]
+
+    def differences(self) -> List[str]:
+        """Every place the script and the reading part, each as a line a person can act on."""
+        found: List[str] = []
+        said: List[str] = []
+        heard: List[str] = []
+
+        def flush() -> None:
+            if said and heard:
+                found.append("said %r, heard %r" % (" ".join(said), " ".join(heard)))
+            elif said:
+                found.append("said %r, heard nothing there" % " ".join(said))
+            elif heard:
+                found.append("heard %r, which the script doesn't say" % " ".join(heard))
+            said.clear()
+            heard.clear()
+
+        for status, index, words in self.events:
+            if status == "heard":
+                flush()
+                continue
+            if index is not None:
+                said.append(self.tokens[index].shown)
+            heard.extend(words)
+        flush()
+        return found
+
+    def numbers_heard_wrong(self) -> List[str]:
+        """The numbers the script says that weren't heard as that number, with what was heard instead."""
+        found = []
+        for token, (status, words) in zip(self.tokens, self.results()):
+            if token.number and status != "heard":
+                found.append("said %r (%s), heard %s" % (token.shown, " ".join(token.forms[0]), repr(" ".join(words)) if words else "nothing there"))
+        return found
+
+    def longest_unheard_run(self) -> int:
+        """The most script words in a row that weren't heard (missing or changed)."""
+        longest = run = 0
+        for status, _words in self.results():
+            run = run + 1 if status != "heard" else 0
+            longest = max(longest, run)
+        return longest
+
+    def problems(self, max_wer: float) -> List[str]:
+        """Why the voice failed the script, if it did: the rate over its limit, a number heard as another, a run of missing words."""
+        found = []
+        if self.rate > max_wer:
+            found.append("the word error rate %.2f is over %.2f" % (self.rate, max_wer))
+        wrong = self.numbers_heard_wrong()
+        if wrong:
+            found.append("a number was heard as another (%s)" % "; ".join(wrong))
+        if self.longest_unheard_run() >= UNHEARD_RUN:
+            found.append("%d script words in a row weren't heard" % self.longest_unheard_run())
+        return found
+
+
+def compare(units: Sequence[Unit], heard: Sequence[str]) -> Comparison:
+    """Align the script's words with the normalised words that were heard (the fewest changes, a `{shown|spoken}` or a number counted
+    as one word) and report where they part. A word matches when the words heard in its place are one of its forms."""
+    tokens = script_tokens(units)
+    n, m = len(tokens), len(heard)
+    widest = [max(len(f) for f in token.forms) for token in tokens]
+    cost = [[0] * (m + 1) for _ in range(n + 1)]
+    for i in range(n, -1, -1):
+        for j in range(m, -1, -1):
+            if i == n:
+                cost[i][j] = m - j
+                continue
+            best = cost[i + 1][j] + 1  # the word wasn't heard
+            for form in tokens[i].forms:
+                if list(heard[j:j + len(form)]) == form:
+                    best = min(best, cost[i + 1][j + len(form)])
+            for take in range(1, widest[i] + 1):
+                if j + take <= m:
+                    best = min(best, cost[i + 1][j + take] + 1)  # other words were heard in its place
+            if j < m:
+                best = min(best, cost[i][j + 1] + 1)  # a heard word the script doesn't have
+            cost[i][j] = best
+    events: List[Tuple[str, Optional[int], List[str]]] = []
+    i = j = 0
+    while i < n or j < m:
+        here = cost[i][j]
+        if i < n:
+            step = None
+            for form in tokens[i].forms:  # a match is preferred to every other way of getting the same cost
+                if list(heard[j:j + len(form)]) == form and cost[i + 1][j + len(form)] == here:
+                    step = ("heard", i, list(form), len(form))
+                    break
+            if step is None:
+                for take in range(1, widest[i] + 1):
+                    if j + take <= m and cost[i + 1][j + take] + 1 == here:
+                        step = ("changed", i, list(heard[j:j + take]), take)
+                        break
+            if step is None and cost[i + 1][j] + 1 == here:
+                step = ("missing", i, [], 0)
+            if step is not None:
+                events.append(step[:3])
+                i, j = i + 1, j + step[3]
+                continue
+        if events and events[-1][0] == "extra":
+            events[-1][2].append(heard[j])
+        else:
+            events.append(("extra", None, [heard[j]]))
+        j += 1
+    return Comparison(tokens, events, cost[0][0])
+
+
 @dataclass
 class Heard:
     """A recognised word and when it was said (seconds)."""

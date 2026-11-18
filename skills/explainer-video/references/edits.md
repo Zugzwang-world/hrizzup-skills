@@ -19,9 +19,9 @@ A JSON file: `{"scenes": [...], "transition": "cut"}`. Paths are relative to the
 |---|---|
 | `image` or `clip` | One of them, the scene's picture (a PNG, JPEG or WebP, at most 25 MiB and 8,192 px a side) or video (an MP4 with a video track: the script reads the file's own boxes first and refuses, exit 2, anything that only looks like one, such as a playlist renamed `.mp4`). Never both |
 | `seconds` | How long the scene lasts. Needed for a picture; a clip with a `trim` takes its length. The last scene takes whatever is left of the narration, and at least 1 second must be left |
-| `motion` | A picture's move: `still` (the default), `zoom-in` (1.00 to 1.12 times), `zoom-out`, `pan-left`, `pan-right`, `pan-up` or `pan-down` (at 1.10 times, 8% of the picture's width or height), eased at both ends. A clip has none of its own |
-| `focus` | `[x, y]`, fractions from 0 to 1 of the picture: where a zoom heads and a pan is centred, and what a crop keeps. The default is the middle. A zoom that heads off-centre crops the far side at its end, so keep a card with words across its width on the middle, and look at the last frame of every moving scene |
-| `fit` | `cover` (the default) fills the frame, cropping around `focus`; `contain` shows the picture whole, in the top four fifths of the frame on the style's paper, so the captions stay clear. Use `contain` for any picture of another shape, such as a 1080 x 1350 chart or meme |
+| `motion` | A picture's move: `still` (the default), `zoom-in` (1.00 towards 1.12 times), `zoom-out`, `pan-left`, `pan-right`, `pan-up` or `pan-down` (at up to 1.10 times, up to 6% of the picture's width sideways and 8% of its height up or down), eased at both ends. It never takes the middle of the picture (where the cards put their words: from 6% to 94% across and 14% to 78% down) out of the frame, under the signature or into the captions, so a zoom stops at about 1.11 times and a pan is made at a smaller zoom to fit its travel. A clip has none of its own |
+| `focus` | `[x, y]`, fractions from 0 to 1 of the picture: where a zoom heads and a pan is centred, and what a crop keeps. The default is the middle. The focus gives way where it would push the safe middle out of the frame (a card's words span 88% of its width, so a zoom there ends in the middle whatever the focus); still look at the last frame of every moving scene |
+| `fit` | `contain` shows the picture whole, in the top four fifths of the frame on the style's paper, so the captions stay clear; `cover` fills the frame, cropping around `focus`. Left out, it is `cover` for a picture of the frame's own 9:16 shape (a card, a phone's picture) and `contain` for any other, such as a 1080 x 1350 chart or meme, so a picture's words are never cut off unless you ask for it. A clip is always `cover` |
 | `trim` | `[in, out]` seconds of a clip; nothing past `out` is read, and a scene longer than `out - in` holds the last frame |
 | `text` | A short line (at most 80 characters) over the top of the scene, white with a black outline. Optional |
 | `transition` | `cut` (the default) or `fade`: half a second of cross-fade centred on each cut |
@@ -60,7 +60,7 @@ A picture that moves is scaled to 1.25 times what covers the frame, and each fra
 ## Checks
 
 - `edit.py` refuses a narration over 58.0 seconds (exit 2), a plan that breaks a rule (exit 2, naming the scene and the rule), and a caption it can't draw (exit 2). It checks the finished file against Hrizzup's limits and that it ends with its narration, and leaves nothing behind if it fails (exit 1).
-- Look at frames yourself: the start, the middle and the end of each scene, and a frame at each caption change. FFmpeg can extract one: `ffmpeg -ss 12.5 -i explainer.mp4 -frames:v 1 frame.png`.
+- Look at frames yourself: the start, the middle and the end of each scene, and a frame at each caption change. Extract one with the kit's own FFmpeg, the one `edit.py` used (imageio-ffmpeg's; a different `ffmpeg` on the path may be another build): `uv run --no-project --python 3.12 --with imageio-ffmpeg==0.8.1 python -c "import imageio_ffmpeg, subprocess; subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), '-ss', '12.5', '-i', 'explainer.mp4', '-frames:v', '1', 'frame.png'], check=True)"` (without uv, the same code with `.venv/bin/python`).
 
 ## Never
 

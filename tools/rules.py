@@ -271,8 +271,10 @@ NATIVE_NOTICES = {
     "espeakng-loader": ("espeak-ng",),
     "kokoro-onnx": ("kokoro-82m",),
     "faster-whisper": ("whisper base.en",),
-    "ctranslate2": ("libgomp",),  # the Linux wheel carries the OpenMP runtime
-    "onnxruntime": ("libraries compiled",),  # the wheel's ThirdPartyNotices.txt lists what is compiled in
+    # the Linux wheel carries the OpenMP runtime, and libctranslate2 has oneMKL, oneDNN, spdlog and the CUDA runtime compiled in (the
+    # macOS one, Ruy and spdlog)
+    "ctranslate2": ("libgomp", "compiled ctranslate2"),
+    "onnxruntime": ("compiled onnxruntime",),  # the wheel's ThirdPartyNotices.txt lists what is compiled in
     # numpy's wheel carries a linear-algebra build and the compiler's runtime libraries; matplotlib's carries its own fonts
     # (licence files in numpy's dist-info and in matplotlib's mpl-data/fonts/ttf, read 18 November 2026).
     "numpy": ("openblas", "lapack", "gcc runtime", "libquadmath"),

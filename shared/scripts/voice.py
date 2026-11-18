@@ -157,11 +157,13 @@ def _download(url, part, digest, size):
 
 
 def _fetch(base, digest, size, name, folder, log):
-    """Download one model file into `folder`: to `<name>.part`, checked, then renamed. 3 tries, the pauses of TRY_PAUSES
-    apart; a try that stops short carries on from where it stopped."""
-    final, part = os.path.join(folder, name), os.path.join(folder, name + ".part")
+    """Download one model file into `folder`: to a part file of its own (a unique name in the same folder, so two runs fetching the
+    same model at once never write one file), checked, then renamed. 3 tries, the pauses of TRY_PAUSES apart; a try that stops
+    short carries on from where it stopped."""
+    final = os.path.join(folder, name)
+    handle, part = tempfile.mkstemp(prefix=name + ".", suffix=".part", dir=folder)
+    os.close(handle)
     log("downloading %s (%.1f MiB) from %s" % (name, size / 1048576, base.split("/")[2]))
-    _quietly_remove(part)  # a part left by an earlier run isn't trusted
     problem = "no try was made"
     for attempt in range(len(TRY_PAUSES) + 1):
         try:
@@ -177,9 +179,14 @@ def _fetch(base, digest, size, name, folder, log):
                 _quietly_remove(part)
                 raise ModelError("couldn't download %s: %s (the address is wrong or the file has moved)" % (name, problem))
             if error.code == 416:
-                _quietly_remove(part)  # a range that can't be had: start again
+                _quietly_remove(part)  # a range that can't be had: start again (a fresh, empty part)
+                handle, part = tempfile.mkstemp(prefix=name + ".", suffix=".part", dir=folder)
+                os.close(handle)
         except (urllib.error.URLError, OSError, TimeoutError, _Short, http.client.HTTPException) as error:
             problem = str(getattr(error, "reason", None) or error) or type(error).__name__
+        except BaseException:
+            _quietly_remove(part)  # an interrupt or a mistake: leave nothing behind
+            raise
         if attempt < len(TRY_PAUSES):
             log("%s: %s; trying again in %d s" % (name, problem, TRY_PAUSES[attempt]))
             time.sleep(TRY_PAUSES[attempt])
@@ -216,6 +223,9 @@ def ensure_model(folder_name, base, files, offline, log):
                 _fetch(base, digest, size, name, folder, log)
             except OSError as error:
                 raise ModelError("can't write %s into %s (%s)" % (name, folder, error.strerror or type(error).__name__))
+        for digest, size, name in files:  # every file is checked again before the folder is given back: another run may have written one
+            if not _is_good(os.path.join(folder, name), digest, size):
+                raise ModelError("%s in %s doesn't check out after the download (another run may have replaced it): run the command again" % (name, folder))
     return folder
 
 

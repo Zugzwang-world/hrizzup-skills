@@ -187,7 +187,8 @@ class VoiceGroup(unittest.TestCase):
             self.assertEqual([f[0] for f in found], ["01-title", "02-fact"])  # the names the plan uses
             os.makedirs(os.path.join(folder, "cards"))
             for stem, _kind, _texts in found:
-                open(os.path.join(folder, "cards", stem + ".png"), "wb").close()
+                with open(os.path.join(folder, "cards", stem + ".png"), "wb") as f:
+                    f.write(built.png(1080, 1920))
             plan = edit.read_plan(os.path.join(folder, "plan.json"))
             self.assertEqual([os.path.basename(s["path"]) for s in plan["scenes"]], ["01-title.png", "02-fact.png"])
             counts, _starts, total = edit.schedule(plan["scenes"], 9.5)  # about what the narration lasts

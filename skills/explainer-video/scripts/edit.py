@@ -11,15 +11,19 @@ A plan is JSON: {"scenes": [...], "transition": "cut" or "fade"}. A scene is eit
     {"image": "cards/01-title.png", "seconds": 7.5, "motion": "zoom-in", "focus": [0.5, 0.4], "fit": "cover", "text": "..."}
     {"clip": "river.mp4", "trim": [2.0, 6.5], "text": "..."}
 
-    image    a PNG, JPEG or WebP; its path is relative to the plan's folder. It fills the 1080 x 1920 frame ("fit": "cover",
-             the default, crops around "focus") or is shown whole ("fit": "contain", on the style's paper, in the top
-             four fifths: the bottom fifth is left for the captions).
+    image    a PNG, JPEG or WebP; its path is relative to the plan's folder. "fit" is "contain" (the picture shown whole, on the
+             style's paper, in the top four fifths: the bottom fifth is left for the captions) or "cover" (it fills the
+             1080 x 1920 frame, cropped around "focus"). Left out, it is "cover" for a picture of the frame's own 9:16 shape
+             and "contain" for any other, so a picture's words are never cut off unless you ask for it.
     clip     an MP4 with a video track (checked from its own bytes: a file that only looks like one is refused, exit 2): scaled
              to cover the frame, cut to 30 frames a second, its sound dropped. "trim" is [in, out] in seconds, and nothing past
              `out` is read; "seconds" makes the scene shorter, or longer by holding the clip's last frame.
     seconds  how long the scene lasts. The last scene takes whatever is left of the narration (at least 1 second must be).
-    motion   still (default), zoom-in, zoom-out, pan-left, pan-right, pan-up or pan-down: a slow move with eased starts.
-    focus    [x, y], fractions of the picture, where a zoom heads and a pan is centred (default [0.5, 0.5]).
+    motion   still (default), zoom-in, zoom-out, pan-left, pan-right, pan-up or pan-down: a slow move with eased starts. It
+             never takes the middle of the picture (where the cards put their words) out of the frame, under the signature
+             or into the captions: a zoom stops at about 1.11 times and a pan is made at a smaller zoom to fit its travel.
+    focus    [x, y], fractions of the picture, where a zoom heads and a pan is centred (default [0.5, 0.5]), as far as
+             that safe middle allows.
     text     a short line shown at the top of the scene (at most 80 characters).
 
 Each frame is drawn here (Pillow), with the scene's text, the current caption and the style's signature on top, and
@@ -50,9 +54,17 @@ MOTIONS = ("still", "zoom-in", "zoom-out", "pan-left", "pan-right", "pan-up", "p
 TRANSITIONS = ("cut", "fade")
 FITS = ("cover", "contain")
 PRESCALE = 1.25  # a picture is scaled to 1.25 times what covers the frame, then a box of it is resampled to the frame
-ZOOM_MAX = 1.12  # a zoom goes from 1.00 to 1.12 times
-PAN_ZOOM = 1.10  # a pan is made at 1.10 times
-PAN_TRAVEL = 0.08  # and moves 8% of the picture's width or height
+ZOOM_MAX = 1.12  # a zoom goes from 1.00 towards 1.12 times, and stops where the safe area (below) needs
+PAN_ZOOM = 1.10  # a pan is made at 1.10 times, or at less where the safe area needs
+PAN_TRAVEL_X = 0.06  # and moves 6% of the picture's width sideways
+PAN_TRAVEL_Y = 0.08  # or 8% of its height up or down
+# What a moving picture must keep in view (fractions of the picture, which at rest are fractions of the frame): where the cards'
+# templates put their words, and where those words may land in the frame while it moves: a little in from the sides, below the
+# signature's pill and above the captions. `tools/test_edit.py` checks every motion and focus against them.
+SAFE_AREA = (0.06, 0.14, 0.94, 0.78)
+KEEP_CLEAR = (0.01, 0.07, 0.99, 0.835)
+FRAME_ASPECT = hrizzup_media.VIDEO_SIZE[0] / hrizzup_media.VIDEO_SIZE[1]  # a picture of this shape (9:16) fills the frame
+ASPECT_TOLERANCE = 0.03
 FADE_SECONDS = 0.5  # a fade between scenes lasts this long, centred on the cut
 MIN_LAST_SCENE = 1.0  # the last scene takes what is left of the narration: at least this long
 MAX_SCENES = 40
@@ -128,9 +140,17 @@ def read_plan(path):
             raise InputError("%s: \"motion\" is one of %s" % (where, ", ".join(MOTIONS)))
         if kind == "clip" and motion != "still":
             raise InputError("%s: a clip has no motion of its own to add; leave \"motion\" out" % where)
-        fit = scene.get("fit", "cover")
-        if fit not in FITS or (kind == "clip" and "fit" in scene):
+        fit = scene.get("fit")
+        if (fit is not None and fit not in FITS) or (kind == "clip" and "fit" in scene):
             raise InputError('%s: "fit" is cover or contain, and only for an image' % where)
+        if fit is None:
+            fit = "cover"
+            if kind == "image":  # a picture that isn't the frame's own shape is shown whole unless the plan says "cover"
+                try:
+                    shape = hrizzup_media.inspect(full)
+                except (hrizzup_media.MediaError, OSError) as error:
+                    raise InputError("%s: can't read the picture %s: %s" % (where, name, error))
+                fit = default_fit(shape.width, shape.height)
         focus = scene.get("focus", [0.5, 0.5])
         if not (isinstance(focus, list) and len(focus) == 2):
             raise InputError('%s: "focus" is [x, y], two fractions from 0 to 1' % where)
@@ -156,6 +176,11 @@ def read_plan(path):
             text = " ".join(text.split())
         found.append({"kind": kind, "path": full, "trim": trim, "seconds": seconds, "motion": motion, "focus": focus, "fit": fit, "text": text})
     return {"scenes": found, "transition": transition}
+
+
+def default_fit(width, height):
+    """The `fit` of a picture when the plan doesn't say: "cover" for the frame's own 9:16 shape (within 3%), "contain" for any other."""
+    return "cover" if abs(width / float(height) - FRAME_ASPECT) <= ASPECT_TOLERANCE else "contain"
 
 
 def schedule(scenes, narration_seconds, fps=FPS):
@@ -184,32 +209,61 @@ def ease(t):
     return t * t * (3.0 - 2.0 * t)
 
 
+def zoom_limit(extra_x=0.0, extra_y=0.0):
+    """The largest zoom at which the safe area, moved by `extra_x` and `extra_y` (a pan's travel, as fractions of the picture), still
+    fits between the keep-clear lines of the frame."""
+    across = (KEEP_CLEAR[2] - KEEP_CLEAR[0]) / (SAFE_AREA[2] - SAFE_AREA[0] + extra_x)
+    down = (KEEP_CLEAR[3] - KEEP_CLEAR[1]) / (SAFE_AREA[3] - SAFE_AREA[1] + extra_y)
+    return min(across, down)
+
+
+def _place(wanted, size_fraction, axis):
+    """Where a box of `size_fraction` of the picture starts along an axis (0 for x, 1 for y), as near `wanted` as keeps the
+    safe area clear of the frame's keep-clear lines and the box inside the picture."""
+    low = max(SAFE_AREA[2 + axis] - KEEP_CLEAR[2 + axis] * size_fraction, 0.0)
+    high = min(SAFE_AREA[axis] - KEEP_CLEAR[axis] * size_fraction, 1.0 - size_fraction)
+    if low > high:  # only the rounding of a zoom at its limit
+        return (low + high) / 2.0, (low + high) / 2.0, (low + high) / 2.0
+    return _clamp(wanted, low, high), low, high
+
+
 def motion_box(motion, progress, size, focus):
     """The part of a picture (its box, in pixels of the pre-scaled picture of `size`) the frame shows at `progress` (0 to 1)
-    through a scene: a zoom heads to the focus, a pan moves along its axis, the box always inside the picture."""
+    through a scene: a zoom heads to the focus, a pan moves along its axis. The box is always inside the picture, and always keeps
+    the picture's safe area (SAFE_AREA) inside the frame, below the signature and above the captions: a zoom stops at its limit,
+    a pan is made at a zoom small enough for its travel, and the focus gives way where it would push the words out."""
     width, height = size
     shown = ease(progress)
     if motion == "still":
         return 0.0, 0.0, float(width), float(height)
+    horizontal = motion in ("pan-left", "pan-right")
     if motion in ("zoom-in", "zoom-out"):
         amount = shown if motion == "zoom-in" else 1.0 - shown
-        zoom = 1.0 + (ZOOM_MAX - 1.0) * amount
+        zoom = min(1.0 + (ZOOM_MAX - 1.0) * amount, zoom_limit())
+    elif horizontal:
+        zoom = min(PAN_ZOOM, zoom_limit(extra_x=PAN_TRAVEL_X))
     else:
-        zoom = PAN_ZOOM
-    box_w, box_h = width / zoom, height / zoom
-    cx, cy = focus[0] * width, focus[1] * height
+        zoom = min(PAN_ZOOM, zoom_limit(extra_y=PAN_TRAVEL_Y))
+    box_w, box_h = 1.0 / zoom, 1.0 / zoom  # as fractions of the picture
+    x0, x_low, x_high = _place(focus[0] - box_w / 2, box_w, 0)
+    y0, y_low, y_high = _place(focus[1] - box_h / 2, box_h, 1)
     if motion.startswith("pan-"):
-        horizontal = motion in ("pan-left", "pan-right")
-        travel = PAN_TRAVEL * (width if horizontal else height)
-        sign = 1.0 if motion in ("pan-right", "pan-down") else -1.0
-        offset = (shown - 0.5) * travel * sign
-        if horizontal:
-            cx = _clamp(cx, box_w / 2, width - box_w / 2) + offset
+        forward = motion in ("pan-right", "pan-down")
+        travel = PAN_TRAVEL_X if horizontal else PAN_TRAVEL_Y
+        low, high, base = (x_low, x_high, x0) if horizontal else (y_low, y_high, y0)
+        if high - low >= travel:
+            begin = _clamp(base - travel / 2.0, low, high - travel)
+            end = begin + travel
         else:
-            cy = _clamp(cy, box_h / 2, height - box_h / 2) + offset
-    cx = _clamp(cx, box_w / 2, width - box_w / 2)
-    cy = _clamp(cy, box_h / 2, height - box_h / 2)
-    return cx - box_w / 2, cy - box_h / 2, cx + box_w / 2, cy + box_h / 2
+            begin, end = low, high
+        if not forward:
+            begin, end = end, begin
+        moved = begin + (end - begin) * shown
+        if horizontal:
+            x0 = moved
+        else:
+            y0 = moved
+    return x0 * width, y0 * height, (x0 + box_w) * width, (y0 + box_h) * height
 
 
 def _clamp(value, low, high):

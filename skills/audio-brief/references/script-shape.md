@@ -21,7 +21,7 @@ Write plain paragraphs separated by a blank line. Each is one beat, and the voic
 
 - **Short sentences.** One verb, one idea. If you have to read a sentence twice, split it.
 - **Say numbers the way a person would.** Write "450" and the voice reads it as "four hundred fifty". Write a year or a long number in words if you want it read a particular way.
-- **Acronyms and names the voice may misread** get a spoken form: `{AQI|A Q I}`, `{NCR|N C R}`. The captions, the transcript and the post show the left side; the voice says the right. Write the spoken side so it reads as you want to hear it; if a name comes out wrong, spell it the way it sounds (`{Noida|Noy-da}`).
+- **Respell only what the voice itself misreads.** A word with two forms, `{shown|spoken}`, is shown (in the transcript, the post and any captions) as the left side and said as the right: `{Gurugram|Goo-roo-gram}`. Acronyms such as AQI and NCR the voice spells out by itself, so they need none. Listen to the narration, or read what a recogniser hears in it with no prompt, and change a word only if the voice said it wrong. A recogniser (the check's Whisper) spells names its own way ("Guru Graham" for Gurugram): when every word the check lists is a name the voice said right, that is the recogniser, not the voice: leave it. The check fails when the voice skips or garbles speech: three or more words in a row not heard, a number heard as another, or too many words changed.
 - **No symbols, no links, no brackets, no tables.** Write "percent" and "rupees" (or "Rs"), not the symbols. Write the words, not a layout.
 - **Times and dates the way you say them:** "before dawn on Monday", "until Friday". Give a zone when it matters.
 - **English only for now.** The voice and the fonts read English (Latin letters); Hindi and other scripts are refused (exit 2).
@@ -46,7 +46,7 @@ Write plain paragraphs separated by a blank line. Each is one beat, and the voic
 - [ ] A correction is said as a correction.
 - [ ] What isn't confirmed is its own beat, and nothing in it is a guess.
 - [ ] 140 to 160 words, short sentences, no link read aloud, no symbol the voice can't say.
-- [ ] Acronyms and names the voice may misread have a spoken form.
+- [ ] Only a word the voice itself misreads has a spoken form (`{shown|spoken}`); names the recogniser spells its own way are left alone.
 - [ ] "Sources are in the post." is the last sentence, and the post's `sources` hold the links.
 - [ ] After `voice.py`: the length and loudness it printed are in range, and the still's title fits.
 - [ ] The post's `body` is at most 1,000 characters, the `transcript` is the script's shown text, and the still has a `description`.
