@@ -104,13 +104,42 @@ class Addresses(unittest.TestCase):
         for address in (PUBLIC, "8.8.8.8", "2606:4700:4700::1111", "::ffff:8.8.8.8"):
             self.assertIsNone(links.unsafe_reason(address), address)
 
-    def test_an_address_that_carries_another_is_judged_by_the_one_inside(self):
-        for address in ("64:ff9b::808:808", "2002:808:808::1", teredo("8.8.8.8", "1.1.1.1")):
-            self.assertIsNone(links.unsafe_reason(address), address)  # public inside: fine
-        self.assertIn("127.0.0.1", links.unsafe_reason("64:ff9b::7f00:1"))
-        self.assertIn("169.254.169.254", links.unsafe_reason("2002:a9fe:a9fe::1"))
-        self.assertIn("127.0.0.1", links.unsafe_reason(teredo("8.8.8.8", "127.0.0.1")))
-        self.assertEqual(links.embedded_addresses(ipaddress.ip_address("2606:4700:4700::1111")), None)
+    def test_6to4_and_teredo_are_refused_outright_whatever_they_carry(self):
+        # the IPv4 address inside one of these doesn't identify the host that answers, so even a public one is refused
+        for address in ("2002:808:808::1", "2002:101:101::", "2002::", teredo("8.8.8.8", "1.1.1.1"), teredo("1.1.1.1", "8.8.8.8"),
+                        "2001:0:808:808::1", "2001::1"):
+            self.assertIn("tunnel", links.unsafe_reason(address), address)
+
+    def test_nat64_is_allowed_only_with_a_public_ipv4_address_inside(self):
+        self.assertIsNone(links.unsafe_reason("64:ff9b::808:808"))
+        self.assertIsNone(links.unsafe_reason("64:ff9b::101:101"))
+        for address, inner in (("64:ff9b::7f00:1", "127.0.0.1"), ("64:ff9b::a00:1", "10.0.0.1"), ("64:ff9b::a9fe:a9fe", "169.254.169.254"),
+                               ("64:ff9b::c0a8:101", "192.168.1.1"), ("64:ff9b::6440:1", "100.64.0.1"), ("64:ff9b::", "0.0.0.0")):
+            reason = links.unsafe_reason(address)
+            self.assertIsNotNone(reason, address)
+            self.assertIn(inner, reason, address)
+
+    def test_the_local_nat64_range_stays_refused(self):
+        for address in ("64:ff9b:1::1", "64:ff9b:1:ffff:ffff:ffff:ffff:ffff", "64:ff9b:1::808:808"):
+            self.assertIn("inside one network", links.unsafe_reason(address), address)
+
+    def test_an_ipv4_mapped_address_needs_a_public_address_inside(self):
+        self.assertIsNone(links.unsafe_reason("::ffff:8.8.8.8"))
+        for address in ("::ffff:127.0.0.1", "::ffff:10.0.0.1", "::ffff:169.254.169.254", "::ffff:192.168.0.9"):
+            self.assertIsNotNone(links.unsafe_reason(address), address)
+
+    def test_the_addresses_own_checks_are_applied_even_when_what_it_carries_is_public(self):
+        # not an early return: a public IPv4 inside a NAT64 or mapped address doesn't excuse the address itself
+        for address in ("64:ff9b::808:808", "::ffff:8.8.8.8"):
+            for attribute in ("is_private", "is_loopback", "is_link_local", "is_multicast", "is_unspecified", "is_site_local"):
+                with mock.patch.object(ipaddress.IPv6Address, attribute, new_callable=mock.PropertyMock, return_value=True):
+                    self.assertIsNotNone(links.unsafe_reason(address), "%s with %s" % (address, attribute))
+            with mock.patch.object(ipaddress.IPv6Address, "is_global", new_callable=mock.PropertyMock, return_value=False):
+                self.assertIsNotNone(links.unsafe_reason(address), "%s not global" % address)
+
+    def test_site_local_and_the_6to4_relay_are_refused(self):
+        for address in ("fec0::1", "feff:ffff::1", "192.88.99.0", "192.88.99.1", "192.88.99.255"):
+            self.assertIsNotNone(links.unsafe_reason(address), address)
 
     def test_not_an_address(self):
         self.assertIsNotNone(links.unsafe_reason("not-an-address"))
@@ -527,6 +556,9 @@ class Connecting(unittest.TestCase):
         raw, wrapped, seen = mock.Mock(name="raw"), object(), {}
 
         class Context:
+            verify_mode = links.ssl.CERT_REQUIRED  # what HTTPSConnection reads from a context (Python 3.10 does)
+            check_hostname = True
+
             def wrap_socket(self, sock, server_hostname=None):
                 seen["wrapped"] = (sock, server_hostname)
                 return wrapped
@@ -543,6 +575,9 @@ class Connecting(unittest.TestCase):
         raw = mock.Mock(name="raw")
 
         class Context:
+            verify_mode = links.ssl.CERT_REQUIRED
+            check_hostname = True
+
             def wrap_socket(self, sock, server_hostname=None):
                 raise links.ssl.SSLError(1, "handshake")
 

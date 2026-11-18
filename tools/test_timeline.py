@@ -134,6 +134,12 @@ class Reading(unittest.TestCase):
                 ("Aid, food, water etc. reach the camp. More.", "Aid, food, water etc. reach the camp")):
             self.assertEqual(card.split_headline(text), headline, text)
 
+    def test_month_abbreviations_do_not_end_a_headline(self):
+        self.assertEqual(card.split_headline("Schools stay shut till Jan. 5. More."), "Schools stay shut till Jan. 5")
+        for month in ("Jan", "Feb", "Mar", "Apr", "Jun", "Jul", "Aug", "Sep", "Sept", "Oct", "Nov", "Dec"):
+            self.assertEqual(card.split_headline("Exams from %s. 9 are cancelled. More." % month),
+                             "Exams from %s. 9 are cancelled" % month, month)
+
     def test_a_question_or_an_exclamation_ends_a_headline_and_stays(self):
         self.assertEqual(card.split_headline("Is the air safe? Doctors say stay indoors."), "Is the air safe?")
         self.assertEqual(card.split_headline("Schools shut! Parents are confused."), "Schools shut!")
@@ -166,18 +172,19 @@ class Items(unittest.TestCase):
         answer["next"] = "eyJ0IjoiMjAyNi0xMS0wMiJ9"
         self.assertEqual(card.read_items(answer)[1], True)
 
-    def test_a_correction_must_find_its_update(self):
-        for bad in ([{"id": "b", "reportedAt": "2026-11-02T02:00:00Z", "headline": "x", "corrects": "gone"}],
-                    [{"id": "a", "reportedAt": "2026-11-02T02:00:00Z", "headline": "x", "corrects": "a"}],  # itself
-                    [{"reportedAt": "2026-11-02T02:00:00Z", "headline": "x", "corrects": "a"}]):
-            with self.assertRaises(card.InputError, msg=repr(bad)):
-                card.read_items(bad)
+    def test_a_correction_whose_target_is_not_in_the_answer_is_a_correction_with_no_target(self):
+        # withdrawn (brief.ts writes "corrects an earlier update"), or on an older page: never a refusal
+        for more in (None, "eyJ0IjoiMjAyNi0xMS0wMiJ9"):
+            answer = {"updates": [{"id": "b", "reportedAt": "2026-11-02T02:00:00Z", "headline": "x", "corrects": "gone"},
+                                  {"reportedAt": "2026-11-02T01:00:00Z", "headline": "y", "corrects": "also gone"}], "next": more}
+            items, flag = card.read_items(answer)
+            self.assertIs(items[0]["corrects"], card.UNKNOWN_TARGET)
+            self.assertIs(items[1]["corrects"], card.UNKNOWN_TARGET)
+            self.assertEqual(flag, more is not None)
 
-    def test_the_message_says_what_to_do(self):
-        with self.assertRaises(card.InputError) as caught:
-            card.read_items({"updates": [{"id": "b", "reportedAt": "2026-11-02T02:00:00Z", "headline": "x", "corrects": "a"}], "next": "c"})
-        self.assertIn("unchanged", str(caught.exception))
-        self.assertIn("older pages", str(caught.exception))
+    def test_a_row_that_corrects_itself_names_no_target(self):
+        items, _more = card.read_items([{"id": "a", "reportedAt": "2026-11-02T02:00:00Z", "headline": "x", "corrects": "a"}])
+        self.assertIs(items[0]["corrects"], card.UNKNOWN_TARGET)
 
     def test_times(self):
         items, _more = card.read_items([{"at": "2026-11-02T07:00:00+05:30", "headline": "x"},
@@ -461,14 +468,18 @@ class Command(unittest.TestCase):
             self.assertEqual(run_main(["--items", source, "--out", os.path.join(folder, "c.png"), "--max-items", "7"])[0], 2)
             self.assertEqual(run_main(["--items", source, "--out", os.path.join(folder, "c.png"), "--tz", "Mars/Base"])[0], 2)
 
-    def test_a_correction_naming_an_update_that_is_not_there_exits_2(self):
+    def test_a_withdrawn_target_marks_the_row_correction_and_a_next_page_keeps_its_line(self):
+        update = {"id": "b", "reportedAt": "2026-11-02T01:30:00Z", "headline": "Correction: the figure was wrong", "corrects": "a"}
         with tempfile.TemporaryDirectory() as folder:
             source = os.path.join(folder, "u.json")
-            with open(source, "w", encoding="utf-8") as f:
-                json.dump([{"id": "b", "reportedAt": "2026-11-02T01:30:00Z", "headline": "x", "corrects": "a"}], f)
-            code, report = run_main(["--items", source, "--out", os.path.join(folder, "c.png")])
-            self.assertEqual(code, 2)
-            self.assertIn("unchanged", report["problem"])
+            for answer, line in (({"updates": [update], "next": None}, None),
+                                 ({"updates": [update], "next": "eyJ0IjoiMjAyNi0xMS0wMiJ9"}, "Earlier updates are not shown")):
+                with open(source, "w", encoding="utf-8") as f:
+                    json.dump(answer, f)
+                _kept, _left, texts, _groups, _zone, _out = card.run(namespace(items=source, out=os.path.join(folder, "c.png")))
+                self.assertEqual(texts["mark1"], "Correction")  # no target to name, and no exit 2
+                self.assertEqual(texts["what1"], "The figure was wrong")
+                self.assertEqual(texts.get("more"), line)
 
     def test_the_notes_of_a_brief_reach_the_card(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -74,40 +74,34 @@ class NetworkProblem(Exception):
 
 NAT64 = ipaddress.ip_network("64:ff9b::/96")  # carries an IPv4 address in its last 32 bits
 NAT64_LOCAL = ipaddress.ip_network("64:ff9b:1::/48")  # for use inside one network
-SIX_TO_FOUR = ipaddress.ip_network("2002::/16")  # carries an IPv4 address in bits 16 to 48
-TEREDO = ipaddress.ip_network("2001::/32")  # carries a server's and a client's IPv4 address
+SIX_TO_FOUR = ipaddress.ip_network("2002::/16")  # a tunnel: the IPv4 address inside isn't the host that answers
+TEREDO = ipaddress.ip_network("2001::/32")  # a tunnel, likewise
 SIX_TO_FOUR_RELAY = ipaddress.ip_network("192.88.99.0/24")
 
 
-def embedded_addresses(ip):
-    """The IPv4 addresses an IPv6 address carries (NAT64, 6to4, Teredo), or None if it carries none."""
-    if ip in NAT64:
-        return [ipaddress.IPv4Address(ip.packed[-4:])]
-    if ip in SIX_TO_FOUR:
-        return [ipaddress.IPv4Address(ip.packed[2:6])]
-    if ip in TEREDO:
-        server, client = ip.teredo
-        return [server, client]
-    return None
-
-
 def unsafe_reason(address):
-    """Why an IP address (as text) must not be visited; None when it is on the public internet. An IPv6
-    address that carries an IPv4 address (::ffff:a.b.c.d, NAT64, 6to4, Teredo) is judged by the one inside."""
+    """Why an IP address (as text) must not be visited; None when it is on the public internet. It fails
+    closed. 6to4 and Teredo addresses are refused outright (the IPv4 address in one doesn't say which host
+    answers). An IPv4-mapped (::ffff:a.b.c.d) or NAT64 (64:ff9b::/96) address must also carry a public IPv4
+    address. Every address then has its own checks applied."""
     try:
         ip = ipaddress.ip_address(str(address).split("%")[0])
     except ValueError:
         return "isn't an address"
+    nat64 = False
     if ip.version == 6:
+        if ip in SIX_TO_FOUR or ip in TEREDO:
+            return "is a tunnel address (6to4 or Teredo), which doesn't say which host answers"
         if ip.ipv4_mapped is not None:
-            return unsafe_reason(str(ip.ipv4_mapped))
-        carried = embedded_addresses(ip)
-        if carried is not None:
-            for inner in carried:
-                reason = unsafe_reason(str(inner))
-                if reason:
-                    return "carries %s, which %s" % (inner, reason)
-            return None
+            reason = unsafe_reason(str(ip.ipv4_mapped))
+            if reason:
+                return reason
+        if ip in NAT64:
+            nat64 = True
+            inner = ipaddress.IPv4Address(ip.packed[-4:])
+            reason = unsafe_reason(str(inner))
+            if reason:
+                return "carries %s, which %s" % (inner, reason)
         if ip in NAT64_LOCAL:
             return "is a NAT64 address for use inside one network"
         if ip.is_site_local:
@@ -123,6 +117,8 @@ def unsafe_reason(address):
         ("is_reserved", "is a reserved address"),
     )
     for attribute, reason in checks:
+        if nat64 and attribute == "is_reserved":
+            continue  # 64:ff9b::/96 sits inside ::/8, which Python calls reserved; its IPv4 address was judged above
         if getattr(ip, attribute):
             return reason
     if not ip.is_global:

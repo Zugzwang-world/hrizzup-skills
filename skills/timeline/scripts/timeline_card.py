@@ -15,7 +15,8 @@ marked as corrected. Times are shown in `--tz` (Asia/Kolkata unless you say othe
     updates.json: {"updates": [{"id": "...", "headline": "...", "reportedAt": "2026-11-02T01:30:00Z",
                                 "corrects": null, "sources": [...], "body": null}, ...], "next": null}
     `id`, `reportedAt` (`at` works too; no zone means UTC) and `headline` are read; `corrects` is null or the
-    `id` of the update it corrects, which must be in the same answer (pass every page if `next` isn't null).
+    `id` of the update it corrects. One that isn't in the answer (withdrawn, or on an older page when `next` isn't
+    null) leaves the row marked "Correction" with no target named.
 
 The last line it prints is one JSON object: {"ok", "outputs", "checks", "problem"}. Exit codes: 0 made
 and checked; 1 the card failed a Hrizzup limit or quality check (text too long: it says how far to shorten);
@@ -54,7 +55,7 @@ DEFAULT_ZONE = "Asia/Kolkata"
 # Words that end in a full stop without ending a sentence (compared in lower case, without their dots).
 ABBREVIATIONS = frozenset((
     "no nos rs mr mrs ms dr st sr jr prof gen col lt sgt capt cmdr maj sen rep gov hon rev fr mt vs etc "
-    "inc ltd co corp dept approx govt vol").split())
+    "inc ltd co corp dept approx govt vol jan feb mar apr jun jul aug sep sept oct nov dec").split())
 SENTENCE_END = re.compile(r"([.!?\u2026])([\"')\]\u2019\u201d]*)\s+")
 
 
@@ -194,11 +195,11 @@ def read_items(data):
         if target is None:
             continue
         if target not in by_id or target == item["id"]:
-            raise InputError(
-                "the update %s corrects %s, which isn't another update in the answer: pass the updates call's answer "
-                "unchanged%s" % (item["id"] or item["headline"][:30], target,
-                                 " (and the older pages too, as `next` isn't empty)" if more else ""))
-        item["corrects"] = {"id": target, "at": by_id[target]["at"]}
+            # The corrected update isn't in the answer: withdrawn (the brief says "corrects an earlier update"),
+            # or on an older page when `next` is set. Either way the row is a correction with no target to name.
+            item["corrects"] = UNKNOWN_TARGET
+        else:
+            item["corrects"] = {"id": target, "at": by_id[target]["at"]}
     return items, more
 
 
