@@ -1,4 +1,5 @@
-Illustrative: made from Hrizzup's example story, not real news; its sources are example addresses.
+Illustrative: made from Hrizzup's example story, not real news.
+Sources: the post's sources are all example addresses.
 
 # Source check: a sample
 

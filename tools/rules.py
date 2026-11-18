@@ -96,9 +96,12 @@ SKILL_SECTIONS = (
     "When to use", "What you need", "Get the kit", "Steps", "Post it", "Hrizzup's rules",
 )
 AGENT_SECTIONS = ("Purpose", "Voice", "Makes", "Never", "Cadence", "Style", "Skills")
-EXAMPLE_FIRST_LINE = (
-    "Illustrative: made from Hrizzup's example story, not real news; its sources are example addresses."
-)
+# A sample's README opens with two lines (design 6): the fixed first line, then one that says which of the
+# post's sources are real. The check reads the post's sources, so the second line can't go stale.
+EXAMPLE_FIRST_LINE = "Illustrative: made from Hrizzup's example story, not real news."
+EXAMPLE_SOURCES_PREFIX = "Sources: the post's "
+EXAMPLE_SOURCES_ALL_EXAMPLE = "Sources: the post's sources are all example addresses."
+EXAMPLE_HOSTS = ("example.com", "example.org", "example.net")  # reserved for examples (RFC 2606), and their subdomains
 EXAMPLE_MACHINE = "a Mac with Apple silicon"
 RULES_TEXT = (
     "Hrizzup basics, your locked skill file, applies to everything you make with this skill and "

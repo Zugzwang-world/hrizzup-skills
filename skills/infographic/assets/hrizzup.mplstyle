@@ -1,0 +1,55 @@
+# Hrizzup's chart style for matplotlib: plain dark ink on white, the kit's text font, direct labels instead
+# of grids, a figure sized in pixels. Use it for a chart you draw yourself and then give to infographic.py
+# as "image" (or post as it is). Add the kit's font first, then the style (run from the skill's folder):
+#
+#   from matplotlib import font_manager, pyplot as plt
+#   for name in ("Regular", "Bold"):
+#       font_manager.fontManager.addfont("assets/fonts/atkinson-hyperlegible/AtkinsonHyperlegible-%s.ttf" % name)
+#   plt.style.use("assets/hrizzup.mplstyle")
+#   figure, axes = plt.subplots(figsize=(9.28, 7.42))    # 928 x 742 px at 100 dpi: the chart-card chart place on 1080 x 1350
+#   ...                                                   # label the marks directly, start bars at zero, then
+#   figure.savefig("chart.png", metadata={"Software": None})
+#
+# Colours are written without a leading hash, as matplotlib style files need.
+
+font.family: Atkinson Hyperlegible
+font.size: 21.6
+text.color: 111111
+
+figure.dpi: 100
+figure.facecolor: FFFFFF
+figure.edgecolor: FFFFFF
+figure.autolayout: False
+figure.constrained_layout.use: True
+savefig.dpi: 100
+savefig.facecolor: FFFFFF
+savefig.edgecolor: FFFFFF
+
+axes.facecolor: FFFFFF
+axes.edgecolor: 111111
+axes.linewidth: 2
+axes.spines.top: False
+axes.spines.right: False
+axes.grid: False
+axes.axisbelow: True
+axes.titlesize: 28
+axes.titleweight: bold
+axes.titlelocation: left
+axes.labelsize: 21.6
+axes.labelcolor: 111111
+axes.prop_cycle: cycler('color', ['111111', '767676', 'A6A6A6'])
+
+xtick.color: 111111
+ytick.color: 111111
+xtick.labelsize: 20
+ytick.labelsize: 20
+xtick.major.size: 0
+ytick.major.size: 0
+xtick.major.pad: 10
+ytick.major.pad: 10
+
+lines.linewidth: 4.3
+lines.markersize: 10
+patch.linewidth: 0
+legend.frameon: False
+legend.fontsize: 20

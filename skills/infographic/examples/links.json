@@ -1,0 +1,38 @@
+[
+  {
+    "url": "https://airquality.cpcb.gov.in/ccr/",
+    "finalUrl": "https://airquality.cpcb.gov.in/ccr/",
+    "status": 200,
+    "ok": true,
+    "redirects": 0,
+    "contentType": "text/html",
+    "title": "Central Control Room | Air Quality",
+    "lastModified": "Wed, 18 Nov 2026 04:59:20 GMT",
+    "checkedAt": "2026-11-18T12:08:40Z",
+    "problem": null
+  },
+  {
+    "url": "https://static.pib.gov.in/WriteReadData/specificdocs/documents/2026/sep/doc_9816_20260907_20291701.pdf",
+    "finalUrl": "https://static.pib.gov.in/WriteReadData/specificdocs/documents/2026/sep/doc_9816_20260907_20291701.pdf",
+    "status": 200,
+    "ok": true,
+    "redirects": 0,
+    "contentType": "application/pdf",
+    "title": null,
+    "lastModified": "Mon, 07 Sep 2026 14:59:17 GMT",
+    "checkedAt": "2026-11-18T12:08:41Z",
+    "problem": null
+  },
+  {
+    "url": "https://example.com/sources/delhi-air-quality-monday-morning",
+    "finalUrl": "https://example.com/sources/delhi-air-quality-monday-morning",
+    "status": 404,
+    "ok": false,
+    "redirects": 0,
+    "contentType": "text/html",
+    "title": "Example Domain",
+    "lastModified": null,
+    "checkedAt": "2026-11-18T12:08:41Z",
+    "problem": "not found (404): the page is gone or the address is wrong"
+  }
+]

@@ -40,6 +40,7 @@ FAMILIES: Dict[str, Dict[str, str]] = {
     },
 }
 ROLES = ("display", "text", "text-bold")
+VALIGNS = ("top", "middle", "bottom")  # where a text's lines sit in its box (a template's optional "valign")
 LINE_HEIGHT = 1.25  # a line's height as a multiple of the font size
 OUTLINE = 0.08  # the outline of text over a picture, as a fraction of its size
 MIN_CONTRAST = 4.5  # WCAG's, for normal text
@@ -283,12 +284,18 @@ def fit_text(text: str, role: str, style: Dict[str, str], box: Tuple[float, floa
 
 
 def draw_lines(canvas: Image.Image, fitted: Fitted, box: Tuple[float, float, float, float], align: str,
-               fill: str, outline: Optional[str] = None) -> None:
-    """Draw fitted lines inside a pixel box, top-aligned; `outline` (a colour) adds the picture outline."""
+               fill: str, outline: Optional[str] = None, valign: str = "top") -> None:
+    """Draw fitted lines inside a pixel box, at its top, middle or bottom (`valign`); `outline` (a colour) adds
+    the picture outline."""
     draw = ImageDraw.Draw(canvas)
     stroke = max(1, round(fitted.size * OUTLINE)) if outline else 0
     x0, y0, x1, y1 = box
-    top = y0 + stroke
+    if valign == "middle":
+        top = y0 + (y1 - y0 - fitted.height) / 2
+    elif valign == "bottom":
+        top = y1 - stroke - fitted.height
+    else:
+        top = y0 + stroke
     for number, line in enumerate(fitted.lines):
         if not line:
             continue
@@ -391,6 +398,9 @@ def render_template(template: Dict[str, Any], texts: Dict[str, str], style: Dict
     for slot in texts:
         if slot not in slots:
             raise DrawError("the template %s has no slot %r (it has: %s)" % (template["id"], slot, ", ".join(slots)))
+    for spec in slots.values():
+        if spec.get("valign", "top") not in VALIGNS:
+            raise DrawError("the template %s: valign is one of %s" % (template["id"], ", ".join(VALIGNS)), 3)
     fitted: Dict[str, Fitted] = {}
     for slot, text in texts.items():
         spec = slots[slot]
@@ -418,7 +428,7 @@ def render_template(template: Dict[str, Any], texts: Dict[str, str], style: Dict
         spec = slots[slot]
         outline = "#000000" if spec["on"] == "picture" else None
         fill = "#FFFFFF" if spec["on"] == "picture" else foreground[spec["on"]]
-        draw_lines(canvas, found, _pixels(spec["box"], size), spec["align"], fill, outline)
+        draw_lines(canvas, found, _pixels(spec["box"], size), spec["align"], fill, outline, spec.get("valign", "top"))
         placed.append({"slot": slot, "size": found.size, "lines": len(found.lines)})
     signature = template["signature"]
     if signature is not None and style["signature"]:

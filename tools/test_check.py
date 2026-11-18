@@ -153,7 +153,7 @@ Once a day.
 """ % json.dumps(rules.STYLE_DEFAULT, indent=2)
 
 EXAMPLES_README = (
-    rules.EXAMPLE_FIRST_LINE + "\n\nInput: the example story's brief. Command, as run: `python3 scripts/hi.py --name World`.\n"
+    rules.EXAMPLE_FIRST_LINE + "\n" + rules.EXAMPLE_SOURCES_ALL_EXAMPLE + "\n\nInput: the example story's brief. Command, as run: `python3 scripts/hi.py --name World`.\n"
     "Made on " + rules.EXAMPLE_MACHINE + ", on 18 November 2026, with Python 3.12.\n\nFiles: `post.json`.\n"
 )
 
@@ -978,12 +978,49 @@ class Examples(Repo):
         self.fails(self.check(), path, "examples", "first line")
         put(self.root, path, EXAMPLES_README.replace(rules.EXAMPLE_MACHINE, "a computer"))
         self.fails(self.check(), path, "examples", "machine")
+        put(self.root, path, EXAMPLES_README.replace("Illustrative: made from", "Made from"))
+        self.fails(self.check(), path, "examples", "first line")
+        # the old one-line wording ("...; its sources are example addresses.") is no longer the first line
+        put(self.root, path, EXAMPLES_README.replace(rules.EXAMPLE_FIRST_LINE, rules.EXAMPLE_FIRST_LINE[:-1] +
+                                                      "; its sources are example addresses."))
+        self.fails(self.check(), path, "examples", "first line")
         put(self.root, path, EXAMPLES_README.replace("`post.json`", "the post"))
         self.fails(self.check(), path, "examples", "doesn't name post.json")
         put(self.root, path, EXAMPLES_README.replace("hi.py", "it"))
         self.fails(self.check(), path, "examples", "hi.py")
         os.remove(Path(self.root) / path)
         self.fails(self.check(), path, "examples", "missing")
+
+    def test_the_second_line_says_which_sources_are_real(self):
+        path = "skills/hello/examples/README.md"
+        real = "https://www.iana.org/domains/example"
+        # all example addresses: the fixed sentence, and nothing else is accepted (a post with no sources counts)
+        put(self.root, path, EXAMPLES_README.replace(rules.EXAMPLE_SOURCES_ALL_EXAMPLE, "Sources: example addresses."))
+        self.fails(self.check(), path, "examples", "all example addresses")
+        put(self.root, path, EXAMPLES_README.replace(rules.EXAMPLE_SOURCES_ALL_EXAMPLE + "\n", ""))
+        self.fails(self.check(), path, "examples", "second line")
+        for host in ("example.org", "docs.example.net", "EXAMPLE.COM"):
+            with self.subTest(host):
+                self.post(sources=["https://%s/a" % host])
+                put(self.root, path, EXAMPLES_README)
+                self.assertEqual([l for l in self.check() if "second line" in l], [])
+        self.post(sources=[])
+        self.assertEqual([l for l in self.check() if "second line" in l], [])
+        # a real source: the fixed sentence is now untrue, and the line must name the address in full
+        self.post(sources=["https://example.com/a", real])
+        self.fails(self.check(), path, "examples", "isn't an example address")
+        for lookalike in ("https://example.com.evil.test/a", "https://notexample.com/a", "https://example.com" + chr(64) + "evil.test/a"):
+            with self.subTest(lookalike):
+                self.post(sources=[lookalike])
+                self.fails(self.check(), path, "examples", "isn't an example address")
+        self.post(sources=["https://example.com/a", real])
+        named = EXAMPLES_README.replace(rules.EXAMPLE_SOURCES_ALL_EXAMPLE, "Sources: the post's real source is %s." % real)
+        put(self.root, path, named)
+        self.assertEqual([l for l in self.check() if "second line" in l], [])
+        put(self.root, path, EXAMPLES_README.replace(rules.EXAMPLE_SOURCES_ALL_EXAMPLE, "Sources: the post's real source is the IANA page."))
+        self.fails(self.check(), path, "examples", "doesn't name the real source")
+        put(self.root, path, named.replace("Sources: the post's", "Sources: its"))
+        self.fails(self.check(), path, "examples", "isn't an example address")
 
     def test_a_missing_post(self):
         os.remove(Path(self.root) / "skills/hello/examples/post.json")
@@ -1147,10 +1184,13 @@ class Templates(Repo):
             "keys": dict(base, extra=1), "font": dict(base, font="comic"), "box": dict(base, box=[0.9, 0, 0.1, 1]),
             "min": dict(base, min=100, max=50), "lines": dict(base, lines=0), "align": dict(base, align="top"),
             "on": dict(base, on="sky"), "case": dict(base, case="lower"), "slot": dict(base, slot="Bad Slot"),
+            "valign": dict(base, valign="centre"),
         }
         for words, text in cases.items():
             with self.subTest(words):
                 self.assertTrue(self.problems(texts=[text]), words)
+        for valign in ("top", "middle", "bottom"):  # the one optional key (added at M3)
+            self.assertEqual(self.problems(texts=[dict(base, valign=valign)]), [], valign)
         self.assertTrue(self.problems(texts=[base, dict(base)]))  # the same slot twice
         self.assertIn("no picture", " ".join(self.problems(picture=None, texts=[dict(base, on="picture")])))
 

@@ -20,6 +20,8 @@ Whichever way, run a skill's commands from its folder. A skill's `## What you ne
 | Name | Kind | What it does | What it needs | Folder |
 |---|---|---|---|---|
 | Breakdown | Skill | A short written take on what's new in a story and why it matters, with what is known, what is not, and the sources. | Nothing | [skills/breakdown](skills/breakdown) |
+| Infographic | Skill | Charts and visual explainers: one message a graphic, bars from zero, direct labels, the source on the image. Three plain templates and a chart style. | An image tool, or running a little code | [skills/infographic](skills/infographic) |
+| Meme | Skill | An image with a caption on the story's latest turn: four plain templates, Hrizzup's sizes, and a guide to keeping the joke fair. | An image tool | [skills/meme](skills/meme) |
 | Source check | Skill | Lists the links behind every claim, says what was checked about each, and asks for working sources where there are none. | Nothing | [skills/source-check](skills/source-check) |
 | Timeline | Skill | The story so far as a dated timeline: one line for each update, oldest first, corrections marked and every line sourced. Optional card. | Nothing | [skills/timeline](skills/timeline) |
 | Translate | Skill | Turns other-language reports into clear English posts that say they are translations, keep every doubt, and add nothing. | Nothing | [skills/translate](skills/translate) |

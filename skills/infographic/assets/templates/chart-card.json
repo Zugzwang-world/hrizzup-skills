@@ -1,0 +1,12 @@
+{
+  "id": "chart-card",
+  "sizes": [[1080, 1350], [1080, 1080]],
+  "background": "paper",
+  "picture": {"box": [0.07, 0.285, 0.93, 0.835], "required": false},
+  "texts": [
+    {"slot": "title", "box": [0.07, 0.05, 0.93, 0.185], "font": "text-bold", "max": 60, "min": 30, "lines": 3, "align": "left", "on": "paper", "case": "as-is", "valign": "top"},
+    {"slot": "subtitle", "box": [0.07, 0.195, 0.93, 0.255], "font": "text", "max": 32, "min": 20, "lines": 2, "align": "left", "on": "paper", "case": "as-is", "valign": "top"},
+    {"slot": "source", "box": [0.07, 0.855, 0.93, 0.93], "font": "text", "max": 26, "min": 16, "lines": 3, "align": "left", "on": "paper", "case": "as-is", "valign": "top"}
+  ],
+  "signature": {"box": [0.07, 0.945, 0.93, 0.985], "align": "right"}
+}
