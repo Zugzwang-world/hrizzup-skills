@@ -6,6 +6,7 @@ Bad examples (a home-folder path, an email address, a digest after a key word) a
 here, so this file never trips the rules it tests.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -224,6 +225,28 @@ class Golden(Repo):
         self.assertTrue(agent["body"].startswith("# Greeter\n"))
         self.assertNotIn("name:", agent["body"])  # an agent's body starts after its frontmatter
 
+    def test_every_kit_digest_is_the_sha256_of_the_file_on_disk(self):
+        for item in json.loads(read(self.root, "catalogue.json"))["items"]:
+            if item["kind"] != "skill":
+                continue
+            self.assertTrue(item["meta"]["kitSha256"])
+            for path, digest in item["meta"]["kitSha256"].items():
+                data = (Path(self.root) / item["path"] / path).read_bytes()
+                self.assertEqual(digest, hashlib.sha256(data).hexdigest(), path)
+
+    def test_the_file_is_exactly_what_json_dumps_makes_with_a_raw_em_dash(self):
+        dash = chr(0x2014)
+        edit(self.root, "skills/hello/SKILL.md", "Short and plain.", "Short " + dash + " plain.")
+        self.write()
+        raw = (Path(self.root) / "catalogue.json").read_bytes()
+        document = json.loads(raw.decode("utf-8"))
+        self.assertIn(dash, document["items"][0]["body"])
+        self.assertEqual(raw, (json.dumps(document, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
+        self.assertIn(dash.encode("utf-8"), raw)  # written as its three UTF-8 bytes, not as a \\u escape
+        self.assertNotIn(b"\\u2014", raw)
+        self.assertFalse(raw.startswith(b"\xef\xbb\xbf"))
+        self.assertTrue(raw.endswith(b"}\n") and not raw.endswith(b"\n\n"))
+
     def test_the_generated_sections(self):
         text = read(self.root, "skills/hello/SKILL.md")
         self.assertIn("## Get the kit\n\nThis skill's kit is the folder skills/hello of " + rules.REPO_URL, text)
@@ -273,6 +296,16 @@ class Golden(Repo):
 
 
 class Stale(Repo):
+    def test_one_changed_kit_byte_makes_the_catalogue_stale_until_write(self):
+        before = json.loads(read(self.root, "catalogue.json"))["items"][0]["meta"]["kitSha256"]["references/guide.md"]
+        put(self.root, "skills/hello/references/guide.md", "# Guide\n\nBe briefer.\n")
+        self.fails(self.check(), "catalogue.json", "generated", "stale")
+        self.write()
+        after = json.loads(read(self.root, "catalogue.json"))["items"][0]["meta"]["kitSha256"]["references/guide.md"]
+        self.assertNotEqual(before, after)
+        self.assertEqual(after, hashlib.sha256(b"# Guide\n\nBe briefer.\n").hexdigest())
+        self.clean()
+
     def test_a_hand_edit_to_the_catalogue(self):
         edit(self.root, "catalogue.json", '"Says hello."', '"Says hullo."')
         self.fails(self.check(), "catalogue.json", "generated", "stale")
@@ -501,6 +534,46 @@ class Symlinks(Repo):
     def test_a_clean_tree_still_writes(self):
         code, problems, changed = catalogue.write(self.root)
         self.assertEqual((code, problems, changed), (0, [], []))
+
+
+class CleanPaths(Repo):
+    """A path with `.`, `..` or an empty part is never a file of the tree, however it resolves."""
+
+    def outside_file(self, name, data):
+        path = Path(self.root).parent / name
+        path.write_bytes(data)
+        self.addCleanup(path.unlink)
+        return path
+
+    def test_unclean_paths_are_refused_by_the_tree(self):
+        tree = catalogue.Tree(self.root)
+        self.assertTrue(tree.exists("skills/hello/SKILL.md"))
+        for rel in ("skills/hello/../hello/SKILL.md", "./README.md", "skills//hello/SKILL.md", "skills/hello/SKILL.md/",
+                    "..", "../x", "/etc/hosts", "skills\\hello\\SKILL.md", ""):
+            with self.subTest(rel=rel):
+                self.assertFalse(tree.exists(rel))
+                with self.assertRaises(OSError):
+                    tree.read(rel)
+                with self.assertRaises(OSError):
+                    tree.size(rel)
+
+    def test_a_skills_named_file_can_not_climb_out_of_the_repository(self):
+        self.outside_file("climb-outside.md", b"# outside\n")
+        edit(self.root, "skills/hello/SKILL.md", "then read `references/guide.md`", "then read `references/../../../../climb-outside.md`")
+        self.fails(self.check(), "skills/hello/SKILL.md", "body", "isn't in the skill's folder")
+
+    def test_a_named_file_can_not_use_dots_to_reach_another_file_inside_either(self):
+        edit(self.root, "skills/hello/SKILL.md", "then read `references/guide.md`", "then read `references/../references/guide.md`")
+        self.fails(self.check(), "skills/hello/SKILL.md", "body", "isn't in the skill's folder")
+
+    def test_a_posts_media_can_not_climb_out_of_examples(self):
+        outside = self.outside_file("climb-outside.png", built.png(1080, 1080))
+        edit(self.root, "skills/hello/SKILL.md", '"breakdown"', '"meme"')
+        edit(self.root, "skills/hello/SKILL.md", "`breakdown`", "`meme`")
+        media = {"file": "../../../../climb-outside.png", "description": "x"}
+        put(self.root, "skills/hello/examples/post.json", json.dumps(dict(POST, kind="image", format="meme", body="A caption.", media=media)) + "\n")
+        self.assertTrue(outside.exists())
+        self.fails(self.check(), "skills/hello/examples/post.json", "examples", "climb-outside.png")
 
 
 class TheSkillsFile(Repo):
@@ -933,6 +1006,24 @@ class Examples(Repo):
         self.post(body="The notice says: " + words)
         self.assertEqual([l for l in self.check() if "post.json" in l], [])
 
+    def test_sources_are_hrizzups_web_addresses(self):
+        path = "skills/hello/examples/post.json"
+        good = ["https://example.com/a", "https://example.com/a%20b?x=1&y=(2)#frag", "https://sub.example.co.in:8443/p;q=1,2",
+                "https://example.com/it's~ok_(x)*+!$@:"]
+        self.post(sources=good)
+        self.assertEqual([l for l in self.check() if "sources" in l], [], good)
+        bad = {
+            "a space": "https://example.com/a b", "a bad %": "https://example.com/%zz", "% at the end": "https://example.com/a%",
+            "non-ASCII": "https://example.com/caf" + chr(0xE9), "a double quote": 'https://example.com/a"b', "angle brackets": "https://example.com/<a>",
+            "a backslash": "https://example.com/a" + chr(92) + "b", "a new line at the end": "https://example.com/a\n",
+            "http": "http://example.com/a", "no dot in the host": "https://localhost/a", "a user name": "https://user" + "@" + "example.com/a",
+            "an under score host": "https://exa_mple.com/a", "too long": "https://example.com/" + "a" * 2040, "not text": 5,
+        }
+        for label, source in bad.items():
+            with self.subTest(label):
+                self.post(sources=[source])
+                self.fails(self.check(), path, "examples", "sources")
+
     def test_post_that_isnt_json(self):
         put(self.root, "skills/hello/examples/post.json", "{not json")
         self.fails(self.check(), "skills/hello/examples/post.json", "examples", "valid JSON")
@@ -1123,6 +1214,31 @@ class TextTypes(unittest.TestCase):
             with self.subTest(label):
                 self.assertTrue(rules.plain_text_problems("body", text, 5000), label)
 
+    def test_the_code_checks_of_the_other_planes(self):
+        # agreement.passes_code_checks: these ranges, for plain_text and longText alike.
+        refused = (0x110BD, 0x110CD, 0x13430, 0x1343F, 0x1BCA0, 0x1BCA3, 0x1D173, 0x1D17A, 0xE0000, 0xE0001, 0xE007F, 0xE0100, 0xE0FFF,
+                   0xF0000, 0xFFFFD, 0x100000, 0x10FFFD)
+        allowed = (0x110BC, 0x110BE, 0x1342F, 0x13440, 0x1BC9F, 0x1BCA4, 0x1D172, 0x1D17B, 0xE1000, 0x1F600, 0x1F468, 0x20000)
+        for code in refused:
+            with self.subTest(refused=hex(code)):
+                self.assertTrue(rules.plain_text_problems("b", "a" + chr(code) + "b", 100))
+                self.assertTrue(rules.long_text_problems("t", "a" + chr(code) + "b", 100))
+        for code in allowed:
+            with self.subTest(allowed=hex(code)):
+                self.assertEqual(rules.plain_text_problems("b", "a" + chr(code) + "b", 100), [])
+                self.assertEqual(rules.long_text_problems("t", "a" + chr(code) + "b", 100), [])
+        self.assertEqual(len(rules.ASTRAL_HIDDEN_RANGES), 8)
+
+    def test_plain_text_has_the_other_code_checks_too(self):
+        joiner = chr(0x200D)
+        bad = {"stacked selectors": "a" + chr(0xFE0F) * 2, "joiner by a letter": "a" + joiner + "b", "joiner at the end": "a" + chr(0x1F468) + joiner,
+               "joiner at the start": joiner + chr(0x1F468), "doubled joiner": chr(0x1F468) + joiner * 2 + chr(0x1F469),
+               "joiner by a new line": chr(0x1F468) + joiner + "\n" + chr(0x1F469)}
+        for label, text in bad.items():
+            with self.subTest(label):
+                self.assertTrue(rules.plain_text_problems("b", text, 100))
+        self.assertEqual(rules.plain_text_problems("b", chr(0x1F468) + joiner + chr(0x1F469) + chr(0xFE0F), 100), [])
+
     def test_the_ranges_are_the_agreements_24(self):
         self.assertEqual(len(rules.HIDDEN_RANGES), 24)
         self.assertFalse(rules.hidden(chr(0x200D)))  # the joiner inside emoji is allowed
@@ -1282,6 +1398,44 @@ class Retirement(Repo):
         self.assertIn("no catalogue.json", " ".join(notes))
         self.assertEqual(base != head, True)
 
+    def test_retired_txt_only_grows(self):
+        put(self.root, "retired.txt", read(self.root, "retired.txt") + "oldslug\nskills/hello/references/old.md\n")
+        base = self.commit_golden()
+        # A pull request that deletes the lines, then brings the slug back, must fail.
+        put(self.root, "retired.txt", "# nothing retired\n")
+        lines = self.check(base=base)
+        self.fails(lines, "retired.txt", "retirement", "oldslug was retired on the base commit and is missing now")
+        self.fails(lines, "retired.txt", "retirement", "skills/hello/references/old.md was retired")
+        put(self.root, "retired.txt", read(self.root, "retired.txt") + "oldslug\nskills/hello/references/old.md\nanother\n")
+        self.assertEqual([l for l in self.check(base=base) if "retirement" in l], [])  # adding is fine
+
+    def test_a_comment_only_retired_file_has_nothing_to_keep(self):
+        base = self.commit_golden()
+        put(self.root, "retired.txt", "")
+        self.assertEqual([l for l in self.check(base=base) if "retirement" in l], [])
+
+    def test_an_unknown_base_commit_is_a_problem_not_a_note(self):
+        self.commit_golden()
+        for base in ("1" * 40, "deadbeef", "no-such-branch"):
+            with self.subTest(base=base):
+                lines, notes = catalogue.check(self.root, base=base, run_help_checks=False)
+                self.fails(lines, "--base", "retirement", "isn't a commit")
+                self.assertNotIn("skipped", " ".join(notes))
+        done = subprocess.run([sys.executable, str(REAL / "tools/catalogue.py"), "--root", self.root, "check", "--base", "1" * 40],
+                              capture_output=True, text=True)
+        self.assertEqual(done.returncode, 1, done.stdout)
+
+    def test_a_base_that_looks_like_an_option_is_never_given_to_git(self):
+        self.commit_golden()
+        for base in ("-h", "--version", "--output=x"):
+            with self.subTest(base=base):
+                lines, _ = catalogue.check(self.root, base=base, run_help_checks=False)
+                self.fails(lines, "--base", "retirement", "isn't a commit")
+
+    def test_a_base_in_a_folder_that_is_not_a_repository_is_a_problem_too(self):
+        lines, _ = catalogue.check(self.root, base="abc1234", run_help_checks=False)
+        self.fails(lines, "--base", "retirement", "isn't a commit")
+
     def test_a_bad_retired_line(self):
         put(self.root, "retired.txt", "# comment\n\nNot A Slug\n")
         self.fails(self.check(), "retired.txt", "retirement", "line 3")
@@ -1324,6 +1478,28 @@ class Workflows(Repo):
                 self.assertIn(event, " ".join(self.problems(text)))
         self.assertIn(
             "pull_request_target", " ".join(self.problems(GOOD_WORKFLOW.replace("on:\n  pull_request:\n  workflow_dispatch:\n", "on: [push, pull_request_target]\n"))))
+
+    def test_the_dangerous_words_fail_closed_in_every_spelling(self):
+        quote = chr(34)
+        forms = {
+            "double-quoted key": GOOD_WORKFLOW.replace("  pull_request:\n", "  " + quote + "pull_request_target" + quote + ":\n"),
+            "single-quoted key": GOOD_WORKFLOW.replace("  pull_request:\n", "  'workflow_run':\n    workflows: [x]\n"),
+            "flow sequence": GOOD_WORKFLOW.replace("on:\n  pull_request:\n  workflow_dispatch:\n", "on: [push, pull_request_target]\n"),
+            "flow mapping": GOOD_WORKFLOW.replace("on:\n  pull_request:\n  workflow_dispatch:\n", "on: {workflow_run: {workflows: [x], types: [completed]}}\n"),
+            "multi-line flow": GOOD_WORKFLOW.replace("on:\n  pull_request:\n  workflow_dispatch:\n", "on: [\n  push,\n  pull_request_target,\n]\n"),
+            "after a comment mark inside a string": GOOD_WORKFLOW.replace("on:\n  pull_request:\n  workflow_dispatch:\n", "on: [" + quote + "a # b" + quote + ", pull_request_target]\n"),
+            "a YAML escape": GOOD_WORKFLOW.replace("on:\n  pull_request:\n  workflow_dispatch:\n", "on: {" + quote + "pull_request" + chr(92) + "x5ftarget" + quote + ": null}\n"),
+            "a unicode escape": GOOD_WORKFLOW.replace("on:\n  pull_request:\n  workflow_dispatch:\n", "on: {" + quote + "workflow" + chr(92) + "u005frun" + quote + ": null}\n"),
+            "in a condition": GOOD_WORKFLOW.replace("    runs-on:", "    if: github.event_name == 'workflow_run'\n    runs-on:"),
+        }
+        for label, text in forms.items():
+            with self.subTest(label):
+                found = " ".join(self.problems(text))
+                self.assertTrue("pull_request_target" in found or "workflow_run" in found, found)
+
+    def test_a_whole_line_comment_may_name_them(self):
+        text = "# never pull_request_target or workflow_run here\n" + GOOD_WORKFLOW
+        self.assertEqual(self.problems(text), [])
 
     def test_an_action_must_be_pinned_to_a_commit(self):
         self.assertIn("pin actions/checkout@v4", " ".join(self.problems(GOOD_WORKFLOW.replace("3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1", "v4"))))

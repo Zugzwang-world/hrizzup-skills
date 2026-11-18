@@ -138,19 +138,48 @@ HIDDEN_RANGES = (
     (8232, 8233), (8234, 8238), (8288, 8303), (12644, 12644), (57344, 63743), (65024, 65037), (65279, 65279),
     (65440, 65440), (65520, 65531),
 )
+# What the database's `agreement.passes_code_checks` adds beyond the main plane (content_store.sql): the
+# format, private-use and default-ignorable characters of the other planes, the tag characters among them.
+ASTRAL_HIDDEN_RANGES = (
+    (0x110BD, 0x110BD), (0x110CD, 0x110CD), (0x13430, 0x1343F), (0x1BCA0, 0x1BCA3), (0x1D173, 0x1D17A),
+    (0xE0000, 0xE0FFF), (0xF0000, 0xFFFFD), (0x100000, 0x10FFFD),
+)
 LF, TAB, ZWJ = 10, 9, 0x200D
 VARIATION_SELECTORS = (0xFE00, 0xFE0F)
 
 
 def hidden(char, allow=()):
-    """Whether a character is one the agreement's text rule forbids (`allow`: code points let through)."""
+    """Whether a character is one the agreement's text rule or its code checks forbid (`allow`: code
+    points let through)."""
     code = ord(char)
-    return code not in allow and any(low <= code <= high for low, high in HIDDEN_RANGES)
+    return code not in allow and any(low <= code <= high for low, high in HIDDEN_RANGES + ASTRAL_HIDDEN_RANGES)
+
+
+def code_check_problems(name, value):
+    """The agreement's other code checks, which both `plain_text` and `longText` pass: no two variation
+    selectors in a row, a zero-width joiner only inside an emoji (never at an end, doubled, or next to an
+    ASCII character or a new line), no new line at the very end."""
+    found = []
+    low, high = VARIATION_SELECTORS
+    if any(low <= ord(a) <= high and low <= ord(b) <= high for a, b in zip(value, value[1:])):
+        found.append("%s stacks variation selectors" % name)
+    joiner = chr(ZWJ)
+    if joiner in value:
+        def ascii_or_lf(char):
+            return char == "\n" or " " <= char <= "~"
+
+        if value.startswith(joiner) or value.endswith(joiner) or joiner * 2 in value or any(
+                (a == joiner and ascii_or_lf(b)) or (b == joiner and ascii_or_lf(a)) for a, b in zip(value, value[1:])):
+            found.append("%s has a stray zero-width joiner" % name)
+    if value.endswith("\n"):
+        found.append("%s ends with a new line" % name)
+    return found
 
 
 def plain_text_problems(name, value, high):
     """The API's `plain_text` (a post's body, a description): 1 to `high` characters, new lines allowed,
-    no control (but the new line) or invisible characters, no space or new line at either end."""
+    no control (but the new line) or invisible characters, no space or new line at either end, and the
+    code checks."""
     if not isinstance(value, str):
         return ["%s isn't text" % name]
     found = []
@@ -160,12 +189,12 @@ def plain_text_problems(name, value, high):
         found.append("%s has a space or new line at an end" % name)
     if any(hidden(c, allow=(LF,)) for c in value):
         found.append("%s has a control or invisible character (a new line is fine, a tab is not)" % name)
-    return found
+    return found + code_check_problems(name, value)
 
 
 def long_text_problems(name, value, high):
     """The API's `longText` (a transcript): 1 to `high` characters, tabs and new lines but no other
-    control character, no invisible character, no stray joiner, no final new line."""
+    control character, no invisible character, and the code checks (so no final new line)."""
     if not isinstance(value, str):
         return ["%s isn't text" % name]
     found = []
@@ -173,20 +202,30 @@ def long_text_problems(name, value, high):
         found.append("%s is %d characters; 1 to %d" % (name, len(value), high))
     if any(hidden(c, allow=(LF, TAB, ZWJ, 0xFE0E, 0xFE0F)) for c in value):
         found.append("%s has a control or invisible character (only tabs and new lines are allowed)" % name)
-    if any(VARIATION_SELECTORS[0] <= ord(a) <= VARIATION_SELECTORS[1] and VARIATION_SELECTORS[0] <= ord(b) <= VARIATION_SELECTORS[1]
-           for a, b in zip(value, value[1:])):
-        found.append("%s stacks variation selectors" % name)
-    joiner = chr(ZWJ)
-    if joiner in value:
-        def ascii_or_lf(char):
-            return char == "\n" or " " <= char <= "~"
+    return found + code_check_problems(name, value)
 
-        stray = value.startswith(joiner) or value.endswith(joiner) or joiner * 2 in value or any(
-            (a == joiner and ascii_or_lf(b)) or (b == joiner and ascii_or_lf(a)) for a, b in zip(value, value[1:]))
-        if stray:
-            found.append("%s has a stray zero-width joiner" % name)
-    if value.endswith("\n"):
-        found.append("%s ends with a new line" % name)
+
+# agreement.web_address (content_store.sql): https://, a host, an optional port and path, only the
+# characters of RFC 3986, `%` only before two hex digits, at most 2,048 characters.
+WEB_ADDRESS_SHAPE = re.compile(r"https://[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?::[0-9]{1,5})?(?:[/?#][^\x00-\x20\x7f-\x9f\\]*)?")
+WEB_ADDRESS_CHARACTERS = re.compile(r"[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]*")
+WEB_ADDRESS_BAD_PERCENT = re.compile(r"%(?![0-9A-Fa-f]{2})")
+WEB_ADDRESS_MAX = 2048
+
+
+def web_address_problems(value):
+    """Why a post's source isn't an `agreement.web_address` ([] when it is)."""
+    if not isinstance(value, str):
+        return ["isn't text"]
+    found = []
+    if len(value) > WEB_ADDRESS_MAX:
+        found.append("is over %d characters" % WEB_ADDRESS_MAX)
+    if not WEB_ADDRESS_SHAPE.fullmatch(value):
+        found.append("must be https:// then a host (letters, digits, hyphens, dots), an optional port and a path")
+    if not WEB_ADDRESS_CHARACTERS.fullmatch(value):
+        found.append("holds a character a web address can't (plain ASCII letters, digits and the marks of RFC 3986 only)")
+    if WEB_ADDRESS_BAD_PERCENT.search(value):
+        found.append("has a % that isn't followed by two hexadecimal digits")
     return found
 
 
@@ -259,3 +298,6 @@ SAFE_IN_SCRIPTS = re.compile(
 PINNED_ACTION = re.compile(r"^[\w.-]+/[\w.-]+(?:/[\w./-]+)?@[0-9a-f]{40}$")
 GITHUBS_MACHINES = re.compile(r"^(?:ubuntu|windows|macos)-[\w.-]+$")
 FORBIDDEN_TRIGGERS = ("pull_request_target", "workflow_run")
+# claude.ai and the Skills API refuse a skill whose `name` holds these words, and XML tags (any `<` or
+# `>`) in a skill's `name` or `description` (Anthropic's Agent Skills documentation).
+RESERVED_NAME_WORDS = ("anthropic", "claude")

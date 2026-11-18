@@ -137,12 +137,22 @@ class Tree:
         root = os.path.realpath(self.root)
         return os.path.commonpath([root, os.path.realpath(self.root / rel)]) != root
 
+    @staticmethod
+    def plain_path(rel):
+        """Whether `rel` is a clean path from the root: `/`-separated names, none empty, `.` or `..`."""
+        return isinstance(rel, str) and "\\" not in rel and "\0" not in rel and all(
+            part not in ("", ".", "..") for part in rel.split("/"))
+
     def exists(self, rel):
         if rel in self.overrides:
             return True
-        return self.first_link(rel) is None and os.path.isfile(self.root / rel)
+        if not self.plain_path(rel) or self.first_link(rel) is not None or self.outside(rel):
+            return False
+        return os.path.isfile(self.root / rel)
 
     def _refuse_links(self, rel):
+        if not self.plain_path(rel):
+            raise OSError("refusing a path with `.`, `..` or an empty part: %r" % (rel,))
         if self.first_link(rel) is not None or self.outside(rel):
             raise OSError("refusing to go through a symbolic link: %s" % rel)
 
@@ -1282,7 +1292,6 @@ def check_notices(tree, resolved, P):
 # Examples (6) and media (7.2.4)
 # ---------------------------------------------------------------------------------------------
 
-URL = re.compile(r"^https://[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?::[0-9]{1,5})?(?:[/?#][^\x00-\x20\x7f-\x9f\\]*)?$")
 
 
 def check_post(tree, slug, fields, P):
@@ -1314,8 +1323,12 @@ def check_post(tree, slug, fields, P):
     for p in rules.plain_text_problems("body", post.get("body"), limit):
         P.add(rel, "examples", p)
     sources = post.get("sources", [])
-    if not isinstance(sources, list) or len(sources) > rules.POST_SOURCES_MAX or not all(isinstance(s, str) and URL.match(s) for s in sources):
-        P.add(rel, "examples", "sources: at most %d web addresses, each starting https://" % rules.POST_SOURCES_MAX)
+    if not isinstance(sources, list) or len(sources) > rules.POST_SOURCES_MAX:
+        P.add(rel, "examples", "sources: a list of at most %d web addresses" % rules.POST_SOURCES_MAX)
+    else:
+        for source in sources:
+            for problem in rules.web_address_problems(source):
+                P.add(rel, "examples", "sources: %r %s" % (source if isinstance(source, str) else str(source), problem))
     spec = post.get("media")
     if kind == "text":
         if spec is not None:
@@ -1554,6 +1567,17 @@ def workflow_scripts(text):
     return found
 
 
+YAML_ESCAPE = re.compile(r"\\(?:x([0-9A-Fa-f]{2})|u([0-9A-Fa-f]{4})|U([0-9A-Fa-f]{8}))")
+
+
+def unescape(match):
+    """One YAML escape (`\\x5f`) as the character it writes; an impossible one is left as it is."""
+    try:
+        return chr(int(match.group(1) or match.group(2) or match.group(3), 16))
+    except (ValueError, OverflowError):
+        return match.group(0)
+
+
 def check_workflow(rel, text, P):
     found = triggers(text)
     if not found:
@@ -1561,6 +1585,14 @@ def check_workflow(rel, text, P):
     bad = found & set(rules.FORBIDDEN_TRIGGERS)
     if bad:
         P.add(rel, "workflow", "runs on %s, which runs with the repository's keys on an outsider's pull request" % sorted(bad))
+    # Fail closed, whatever the YAML form (quoted keys, flow lists and maps, escapes, a comment mark inside a
+    # string): the words themselves may not appear anywhere but in a whole-line comment.
+    live = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    decoded = YAML_ESCAPE.sub(unescape, live)
+    for word in rules.FORBIDDEN_TRIGGERS:
+        if word in live or word in decoded:
+            P.add(rel, "workflow", "%s appears outside a comment: that trigger runs with the repository's keys on an "
+                  "outsider's pull request, and no spelling of it is allowed" % word)
     for action in workflow_actions(text):
         if not action.startswith("./") and not rules.PINNED_ACTION.match(action):
             P.add(rel, "workflow", "pin %s to a full commit SHA" % action)
@@ -1597,12 +1629,10 @@ def check_workflows(tree, P):
 # Retirement (7.2.6)
 # ---------------------------------------------------------------------------------------------
 
-def read_retired(tree, P):
-    """(retired slugs, retired kit paths) from retired.txt."""
+def parse_retired(text, P=None):
+    """(retired slugs, retired kit paths) from the text of a retired.txt; bad lines go to P if given."""
     slugs, paths = set(), set()
-    if not tree.exists("retired.txt"):
-        return slugs, paths
-    for number, line in enumerate((tree.text("retired.txt") or "").split("\n"), start=1):
+    for number, line in enumerate((text or "").split("\n"), start=1):
         line = line.strip()
         if not line or line.startswith("#"):
             continue
@@ -1610,9 +1640,16 @@ def read_retired(tree, P):
             paths.add(line)
         elif valid_slug(line):
             slugs.add(line)
-        else:
+        elif P is not None:
             P.add("retired.txt", "retirement", "line %d: a slug, or skills/<slug>/<kit path>" % number)
     return slugs, paths
+
+
+def read_retired(tree, P):
+    """(retired slugs, retired kit paths) from retired.txt."""
+    if not tree.exists("retired.txt"):
+        return set(), set()
+    return parse_retired(tree.text("retired.txt"), P)
 
 
 def git_show(root, base, rel):
@@ -1623,6 +1660,17 @@ def git_show(root, base, rel):
     return done.stdout.decode("utf-8") if done.returncode == 0 else None
 
 
+def commit_exists(root, base):
+    """Whether `base` names a commit in this repository. A leading `-` is never passed to git."""
+    if base.startswith("-"):
+        return False
+    try:
+        done = subprocess.run(["git", "cat-file", "-e", base + "^{commit}"], cwd=root, capture_output=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return done.returncode == 0
+
+
 def check_retirement(tree, items, base, P, notes):
     retired_slugs, retired_paths = read_retired(tree, P)
     present = {i["slug"] for i in items}
@@ -1631,6 +1679,15 @@ def check_retirement(tree, items, base, P, notes):
     if not base or set(base) <= {"0"}:
         notes.append("retirement check skipped: no base commit")
         return
+    if not commit_exists(tree.root, base):
+        P.add("--base", "retirement", "%r isn't a commit in this repository, so nothing can be compared with it "
+              "(is the history fetched in full?)" % base)
+        return
+    # retired.txt only grows: every line the base had is still there.
+    old_slugs, old_paths = parse_retired(git_show(tree.root, base, "retired.txt"))
+    for line in sorted(old_slugs - retired_slugs) + sorted(old_paths - retired_paths):
+        P.add("retired.txt", "retirement", "%s was retired on the base commit and is missing now: retired.txt only grows "
+              "(otherwise a retired slug could come back)" % line)
     old = git_show(tree.root, base, "catalogue.json")
     if old is None:
         notes.append("retirement check skipped: the base commit has no catalogue.json")

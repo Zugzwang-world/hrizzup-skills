@@ -143,6 +143,33 @@ class Subset(unittest.TestCase):
         self.refused(text, "hrizzup-needs", folder="greeter", kind=frontmatter.AGENT)
 
 
+class ClaudeAiRules(unittest.TestCase):
+    """claude.ai and the Skills API refuse "anthropic" or "claude" in a skill's name, and XML tags in its
+    name or description (Anthropic's Agent Skills documentation), so every SKILL.md here avoids them."""
+
+    def refused(self, text, folder, words):
+        _, _, problems = frontmatter.parse(text, frontmatter.SKILL, folder)
+        self.assertIn(words, " ".join(problems))
+
+    def test_reserved_words_in_the_name(self):
+        for name in ("claude-notes", "my-anthropic-skill", "notes-for-claude"):
+            with self.subTest(name):
+                self.refused(GOOD.replace('name: "hello"', 'name: "%s"' % name), name, "refuse in a skill's name")
+
+    def test_xml_tags_in_the_name_or_description(self):
+        self.refused(GOOD.replace("Says hello.", "Says <b>hello</b>.", 1), "hello", "`description` holds `<` or `>`")
+        self.refused(GOOD.replace("Says hello.", "Says hello > goodbye.", 1), "hello", "`description` holds `<` or `>`")
+        self.refused(GOOD.replace('name: "hello"', 'name: "<x>"'), "<x>", "`name` holds `<` or `>`")
+
+    def test_mentioning_claude_in_a_description_is_fine(self):
+        text = GOOD.replace("Says hello.", "Says hello in Claude Code.", 1)
+        self.assertEqual(frontmatter.parse(text, frontmatter.SKILL, "hello")[2], [])
+
+    def test_a_starter_agent_is_not_loaded_by_claude_ai(self):
+        text = GOOD_AGENT.replace('name: "greeter"', 'name: "claude-greeter"')
+        self.assertEqual(frontmatter.parse(text, frontmatter.AGENT, "claude-greeter")[2], [])
+
+
 class CatalogueText(unittest.TestCase):
     def problems(self, text):
         return catalogue.catalogue_text_problems(text)

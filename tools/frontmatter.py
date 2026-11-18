@@ -115,6 +115,13 @@ def parse(text: str, kind: str, folder: str):
         problems.append("`name` is %r but the folder is %r: they must match" % (fields["name"], folder))
     if "name" in fields and not rules.SLUG.match(fields["name"]):
         problems.append("`name` %r isn't a slug (lower case, digits and single hyphens)" % fields["name"])
+    if kind == SKILL:
+        for word in rules.RESERVED_NAME_WORDS:
+            if word in fields.get("name", ""):
+                problems.append("`name` holds %r, which claude.ai and the Skills API refuse in a skill's name" % word)
+        for key in ("name", "description"):
+            if "<" in fields.get(key, "") or ">" in fields.get(key, ""):
+                problems.append("`%s` holds `<` or `>`: claude.ai and the Skills API refuse XML tags there" % key)
     if fields.get("hrizzup-format") is not None and fields["hrizzup-format"] not in rules.FORMATS:
         problems.append("`hrizzup-format` %r isn't one of Hrizzup's format codes" % fields["hrizzup-format"])
     if kind == AGENT and "hrizzup-skills" in fields:
