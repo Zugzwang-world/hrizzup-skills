@@ -8,10 +8,16 @@ import contextlib
 import gzip
 import importlib.util
 import io
+import ipaddress
 import json
 import os
-import tempfile
+import socket
+import threading
+import time
+import tracemalloc
 import unittest
+import tempfile
+import zlib
 from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -27,6 +33,12 @@ def load():
 
 links = load()
 PUBLIC = "93.184.216.34"
+
+
+def teredo(server, client):
+    """A Teredo address (2001:0::/32) for a server and a client: the client is written inverted."""
+    inverted = bytes(b ^ 0xFF for b in ipaddress.IPv4Address(client).packed)
+    return str(ipaddress.IPv6Address(bytes.fromhex("20010000") + ipaddress.IPv4Address(server).packed + b"\x00\x00\x00\x01" + inverted))
 
 
 class Net:
@@ -83,12 +95,22 @@ class Addresses(unittest.TestCase):
         for address in ("127.0.0.1", "127.8.8.8", "10.0.0.1", "172.16.5.5", "192.168.1.1", "169.254.169.254", "0.0.0.0",
                         "224.0.0.1", "100.64.0.1", "240.0.0.1", "::1", "::", "fc00::1", "fd12:3456::1", "fe80::1",
                         "ff02::1", "::ffff:127.0.0.1", "::ffff:10.0.0.1", "::ffff:169.254.169.254", "2002:7f00:1::1",
-                        "64:ff9b::7f00:1"):
+                        "64:ff9b::7f00:1", "fec0::1", "feff::1", "192.88.99.1", "64:ff9b:1::1", "64:ff9b:1:ffff::1",
+                        "64:ff9b::a00:1", "64:ff9b::a9fe:a9fe", "2002:a9fe:a9fe::1", "2002:c0a8:101::1", teredo("8.8.8.8", "127.0.0.1"),
+                        teredo("127.0.0.1", "8.8.8.8"), teredo("8.8.8.8", "10.1.2.3")):
             self.assertIsNotNone(links.unsafe_reason(address), address)
 
     def test_public(self):
         for address in (PUBLIC, "8.8.8.8", "2606:4700:4700::1111", "::ffff:8.8.8.8"):
             self.assertIsNone(links.unsafe_reason(address), address)
+
+    def test_an_address_that_carries_another_is_judged_by_the_one_inside(self):
+        for address in ("64:ff9b::808:808", "2002:808:808::1", teredo("8.8.8.8", "1.1.1.1")):
+            self.assertIsNone(links.unsafe_reason(address), address)  # public inside: fine
+        self.assertIn("127.0.0.1", links.unsafe_reason("64:ff9b::7f00:1"))
+        self.assertIn("169.254.169.254", links.unsafe_reason("2002:a9fe:a9fe::1"))
+        self.assertIn("127.0.0.1", links.unsafe_reason(teredo("8.8.8.8", "127.0.0.1")))
+        self.assertEqual(links.embedded_addresses(ipaddress.ip_address("2606:4700:4700::1111")), None)
 
     def test_not_an_address(self):
         self.assertIsNotNone(links.unsafe_reason("not-an-address"))
@@ -335,6 +357,11 @@ class Manners(unittest.TestCase):
         self.assertEqual((result["ok"], result["status"]), (False, 429))
         self.assertNotIn(120, sleeps)
 
+    def test_retry_after_takes_ascii_digits_only(self):
+        self.assertIsNone(links.retry_after_seconds(chr(0xB2)))  # a superscript two: str.isdigit() says yes, int() says no
+        self.assertIsNone(links.retry_after_seconds(chr(0x663)))  # an Arabic-Indic three
+        self.assertEqual(links.retry_after_seconds("12"), 12)
+
     def test_retry_after_as_a_date(self):
         self.assertEqual(links.retry_after_seconds("7"), 7)
         self.assertIsNone(links.retry_after_seconds("soon"))
@@ -409,6 +436,12 @@ class FakeConnection:
     def __init__(self, raises=None, status=200, headers=None, body=b""):
         self.raises, self.status, self.headers, self.body = raises, status, headers or [("Content-Type", "text/html")], body
         self.requests, self.read_limits = [], []
+        self.aborted = False
+        self.released = threading.Event()
+
+    def abort(self):
+        self.aborted = True
+        self.released.set()
 
     def __call__(self, host, address, port, timeout, context):
         return self
@@ -487,6 +520,151 @@ def http_error(name):
     return cls(b"") if name == "IncompleteRead" else cls("x")
 
 
+class Connecting(unittest.TestCase):
+    """PinnedConnection.connect: the address that was checked, and TLS for the host's name."""
+
+    def test_it_connects_to_the_checked_address_and_names_the_host_for_tls(self):
+        raw, wrapped, seen = mock.Mock(name="raw"), object(), {}
+
+        class Context:
+            def wrap_socket(self, sock, server_hostname=None):
+                seen["wrapped"] = (sock, server_hostname)
+                return wrapped
+
+        with mock.patch.object(links.socket, "create_connection", return_value=raw) as create:
+            connection = links.PinnedConnection("a.test", "151.101.1.69", 443, 5, Context())
+            connection.connect()
+        create.assert_called_once_with(("151.101.1.69", 443), timeout=5)  # the address, never the name
+        self.assertEqual(seen["wrapped"], (raw, "a.test"))  # the name, for the certificate and the SNI
+        self.assertIs(connection.sock, wrapped)
+        self.assertEqual(connection.host, "a.test")  # the Host header is the name too
+
+    def test_a_failed_handshake_closes_the_plain_socket(self):
+        raw = mock.Mock(name="raw")
+
+        class Context:
+            def wrap_socket(self, sock, server_hostname=None):
+                raise links.ssl.SSLError(1, "handshake")
+
+        with mock.patch.object(links.socket, "create_connection", return_value=raw):
+            connection = links.PinnedConnection("a.test", "151.101.1.69", 443, 5, Context())
+            with self.assertRaises(links.ssl.SSLError):
+                connection.connect()
+        raw.close.assert_called_once_with()
+
+    def test_abort_ends_a_read_that_is_waiting(self):
+        a, b = socket.socketpair()
+        self.addCleanup(a.close)
+        self.addCleanup(b.close)
+        connection = links.PinnedConnection("a.test", PUBLIC, 443, 5, links.ssl.create_default_context())
+        connection.sock = a
+        done = []
+        reader = threading.Thread(target=lambda: done.append(a.recv(10)), daemon=True)
+        reader.start()
+        time.sleep(0.1)
+        connection.abort()
+        reader.join(3)
+        self.assertFalse(reader.is_alive(), "the read is still waiting")
+        self.assertTrue(connection.aborted)
+
+
+class Deadline(unittest.TestCase):
+    """A site that answers slowly gets `timeout` seconds in all, not that long for every byte."""
+
+    def fetch(self, fake, timeout=0.3):
+        started = time.monotonic()
+        with mock.patch.object(links, "PinnedConnection", fake):
+            try:
+                links.fetch("a.test", PUBLIC, 443, "GET", "/", timeout)
+            except links.NetworkProblem as error:
+                return error, time.monotonic() - started
+        self.fail("the request was not cut off")
+
+    def test_a_site_that_never_sends_its_headers(self):
+        class Silent(FakeConnection):
+            def getresponse(self):
+                self.released.wait(10)
+                raise OSError("the connection was cut")
+
+        error, seconds = self.fetch(Silent())
+        self.assertEqual(error.kind, "timeout")
+        self.assertLess(seconds, 3)
+
+    def test_a_site_that_drips_its_body_is_cut_off_and_its_partial_answer_is_not_used(self):
+        class Dripping(FakeConnection):
+            def read(self, amount):
+                self.released.wait(10)
+                return b"<title>par"  # what had arrived when the deadline cut the connection
+
+        error, seconds = self.fetch(Dripping())
+        self.assertEqual(error.kind, "timeout")
+        self.assertLess(seconds, 3)
+
+    def test_a_quick_answer_is_not_cut(self):
+        fake = FakeConnection(body=b"hello")
+        with mock.patch.object(links, "PinnedConnection", fake):
+            self.assertEqual(links.fetch("a.test", PUBLIC, 443, "GET", "/", 5)[2], b"hello")
+        self.assertFalse(fake.aborted)
+
+    def test_a_page_whose_get_times_out_keeps_its_head_answer(self):
+        calls = []
+
+        def fetch(host, address, port, method, path, timeout):
+            calls.append(method)
+            if method == "GET":
+                raise links.NetworkProblem("no complete answer in 5 seconds", "timeout")
+            return 200, {"content-type": "text/html"}, b""
+
+        with mock.patch.object(links, "resolve", lambda host, port: [PUBLIC]), mock.patch.object(links, "fetch", fetch):
+            seen, _sleeps = visitor(0)
+            result = links.check_link("https://a.test/", seen)
+        self.assertEqual((calls, result["ok"], result["status"]), (["HEAD", "GET"], True, 200))
+
+
+class Titles(unittest.TestCase):
+    HTML = {"content-type": "text/html"}
+    GZIP = {"content-type": "text/html", "content-encoding": "gzip"}
+
+    def test_a_gzip_bomb_is_read_only_as_far_as_the_cap(self):
+        late = gzip.compress(b"a" * links.MAX_READ + b"<title>too late</title>")
+        self.assertIsNone(links.page_title(self.GZIP, late))  # beyond the first 64 KiB it unpacks to
+        early = gzip.compress(b"<title>ok</title>" + b" " * 2000000)
+        self.assertEqual(links.page_title(self.GZIP, early), "ok")
+
+    def test_a_gzip_bomb_does_not_fill_the_memory(self):
+        bomb = gzip.compress(b"\0" * 50000000, 9)  # about 50 KB that unpacks to 50 MB
+        self.assertLess(len(bomb), links.MAX_READ)
+        tracemalloc.start()
+        try:
+            self.assertIsNone(links.page_title(self.GZIP, bomb))
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        self.assertLess(peak, 5000000)
+
+    def test_a_broken_or_other_encoding_gives_no_title(self):
+        self.assertIsNone(links.page_title(self.GZIP, b"not gzip at all"))
+        self.assertIsNone(links.page_title({"content-type": "text/html", "content-encoding": "br"}, b"<title>x</title>"))
+
+    def test_64_kib_of_title_tags_takes_no_longer_than_its_length(self):
+        for body in (b"<title>" * 9000, b"<title " * 9000, b"<title" * 10000, b"<title>" + b"<title>" * 9000 + b"x" * 10):
+            started = time.monotonic()
+            self.assertIsNone(links.page_title(self.HTML, body[:links.MAX_READ]))
+            self.assertLess(time.monotonic() - started, 1.0, body[:12])
+
+    def test_the_title_tag_is_found_however_it_is_written(self):
+        for body, title in ((b"<TITLE>One</TITLE>", "One"), (b"<title lang=en>Two</Title>", "Two"), (b"<titles>no</titles><title>Three</title>", "Three"),
+                            (b"<title\n>Four</title >", "Four"), (b"<title>Five &amp; six</title>", "Five & six")):
+            self.assertEqual(links.page_title(self.HTML, body), title, body)
+
+    def test_a_title_that_never_closes_is_none(self):
+        self.assertIsNone(links.page_title(self.HTML, b"<title>open forever"))
+
+    def test_the_charset_of_the_header_is_used(self):
+        body = "<title>caf\u00e9</title>".encode("latin-1")
+        self.assertEqual(links.page_title({"content-type": "text/html; charset=ISO-8859-1"}, body), "caf\u00e9")
+
+
 class Finding(unittest.TestCase):
     def test_links_in_a_text(self):
         text = ("See https://example.com/a, and (https://example.org/b). Also [here](https://example.net/c) and "
@@ -548,6 +726,56 @@ class Command(unittest.TestCase):
             with open(source, encoding="utf-8") as f:
                 self.assertEqual(f.read(), "- https://a.test/one\n")  # untouched
             self.assertFalse(os.path.exists(other))
+
+    BRIEF = ("# T\n\nSummary, see https://summary.test/x\n\n## Timeline\n\n- 2026-11-02 01:30 UTC: A headline.\n\n## Sources\n\n"
+             "- https://a.test/one\n- https://a.test/two\n\n## Already on the desk\n\n- @bot (post): \"read https://other.test/y\"\n\n"
+             "## Open questions\n\n- @bot asked: https://other.test/z\n")
+
+    def test_a_section_limits_the_links_taken_from_a_file(self):
+        self.assertEqual(links.links_in(links.section_of(self.BRIEF, "Sources")), ["https://a.test/one", "https://a.test/two"])
+        self.assertEqual(links.section_of(self.BRIEF, "Nothing here"), None)
+        self.assertEqual(links.section_of("## Sources\n\n## Next\n- https://a.test/\n", "Sources"), "")  # empty, not missing
+        with tempfile.TemporaryDirectory() as folder:
+            source = os.path.join(folder, "brief.md")
+            with open(source, "w", encoding="utf-8") as f:
+                f.write(self.BRIEF)
+            net = Net()
+            code, out, _err = self.run_main(["--file", source, "--section", "Sources"], net)
+            self.assertEqual(code, 0)
+            self.assertEqual({call[0] for call in net.calls}, {"a.test"})  # no request to the other agents' links
+            self.assertEqual([c["url"] for c in json.loads(out.strip().split("\n")[-1])["checks"]],
+                             ["https://a.test/one", "https://a.test/two"])
+            everything = Net()
+            self.run_main(["--file", source], everything)
+            self.assertIn("other.test", {call[0] for call in everything.calls})  # without --section, as before
+
+    def test_a_missing_section_or_no_file_is_bad_input(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = os.path.join(folder, "brief.md")
+            with open(source, "w", encoding="utf-8") as f:
+                f.write(self.BRIEF)
+            net = Net()
+            self.assertEqual(self.run_main(["--file", source, "--section", "Citations"], net)[0], 2)
+            self.assertEqual(self.run_main(["https://a.test/", "--section", "Sources"], net)[0], 2)
+            self.assertEqual(net.calls, [])
+
+    def test_a_missing_output_folder_is_found_before_any_request(self):
+        with tempfile.TemporaryDirectory() as folder:
+            for flag in ("--json", "--markdown"):
+                net = Net()
+                code, out, _err = self.run_main(["https://a.test/", flag, os.path.join(folder, "no-such-folder", "r.out")], net)
+                self.assertEqual(code, 2, flag)
+                self.assertEqual((net.calls, net.resolved), ([], []), flag)  # nothing was fetched for nothing
+                self.assertIn("folder", json.loads(out.strip().split("\n")[-1])["problem"])
+
+    def test_a_report_that_cannot_be_written_is_bad_input_not_a_traceback(self):
+        def refuse(path, text):
+            raise OSError(13, "Permission denied")
+
+        with tempfile.TemporaryDirectory() as folder, mock.patch.object(links, "write_report", refuse):
+            code, out, _err = self.run_main(["https://a.test/", "--json", os.path.join(folder, "r.json")], Net())
+        self.assertEqual(code, 2)
+        self.assertIn("Permission denied", json.loads(out.strip().split("\n")[-1])["problem"])
 
     def test_bad_input_exits_two(self):
         for argv in ([], ["--file", os.path.join(tempfile.gettempdir(), "no-such-file-for-the-test")],

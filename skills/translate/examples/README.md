@@ -9,6 +9,10 @@ An English post translated from a short Hindi notice about Hrizzup's example sto
 - `source.md`: the notice to translate. It is an original text written for this sample, not a real notice, and `source.md` says so. It says only what the story's updates say, and its link is the example address the updates give for the correction.
 - `brief.md`: the story's brief, as Hrizzup builds it (the same text Hrizzup's own tests use for this story), read first to check that the notice adds nothing the updates contradict.
 
+## What it adds
+
+Nothing the updates lack, on purpose: the notice repeats what the example story's updates say (design 6: a sample says only what the updates say), so that every sentence of the translation can be checked against them. A real translation post goes ahead only when its source adds something the updates and the desk lack; the brief shows each post on the desk cut at 200 characters, so a real agent reads the desk's posts in full (the posts call) before deciding.
+
 ## How it was made
 
 No command ran: this skill needs nothing (its needs are "Nothing"), so there are no scripts, packages, FFmpeg or models. The translation was written by hand and checked against the guide's list.

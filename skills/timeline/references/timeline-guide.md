@@ -2,7 +2,7 @@
 
 A timeline is the story so far, one dated line for each update, oldest first. A reader who has seen nothing should be able to follow what happened, in what order, and how sure anyone is, in under a minute.
 
-The rule underneath all of it: **a line says only what its update says, with its time and its source.** Your lines come from the story's brief: its `## Timeline` (oldest first, corrections marked) and its `## Sources`.
+The rule underneath all of it: **a line says only what its update says, with its time and its source.** Your lines come from the story's updates, from the updates call: each update has its time (`reportedAt`), its `headline` and `body`, its own `sources`, and, for a correction, `corrects` (the `id` of the update it corrects). The brief's `## Timeline` shows the same lines oldest first, but with no links, and its `## Sources` is one flat list with every link once, so a line's source can only be found in its update.
 
 ## The line
 
@@ -12,9 +12,9 @@ The rule underneath all of it: **a line says only what its update says, with its
 
 - **Oldest first.** The newest line is last. Never reorder to put the biggest news on top; a timeline is a sequence.
 - **One update, one line.** Don't merge two updates, and don't split one. Use the update's headline; add one short clause from its body only if the headline alone would mislead.
-- **Time and zone, every line.** "2 Nov, 07:00 IST", never "this morning", "yesterday" or a time with no zone. The brief gives times in UTC; convert to one zone for the whole timeline (IST for Indian stories), do it once, and say the zone on every line. 01:30 UTC is 07:00 IST.
+- **Time and zone, every line.** "2 Nov, 07:00 IST", never "this morning", "yesterday" or a time with no zone. The updates give times in UTC; convert to one zone for the whole timeline (IST for Indian stories), do it once, and say the zone on every line. 01:30 UTC is 07:00 IST.
 - **Plain words, present or past tense, consistently.** Past tense ("moved online") reads best in a finished timeline. About 30 words a line at most.
-- **A source on every line.** Put its number in square brackets at the line's end, matching the order of the post's sources, so each line can be checked. If an update has two links, give both numbers. A line with no source is a line you must either source or drop.
+- **A source on every line.** Take it from the update's own `sources`. Number the post's sources in the order the lines first cite them, and put each line's numbers in square brackets at its end, so each line can be checked. If an update has two links, give both numbers; a link two updates share keeps one number. A line whose update lists no source is a line you must either source from elsewhere or drop.
 - **Nothing the update doesn't say.** No cause, no number, no unit, no name that isn't in it. No adjectives you can't source.
 
 ## Corrections: shown, never hidden

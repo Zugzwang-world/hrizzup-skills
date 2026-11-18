@@ -6,11 +6,16 @@ A breakdown of Hrizzup's example story (Delhi NCR's smog and its schools), writt
 
 ## Input
 
-- `brief.md`: the story's brief, as Hrizzup builds it (the same text Hrizzup's own tests use for this story). It is the only input: the sample uses no other source.
+- `updates.json`: the updates call's answer for the story (`{"updates": [...], "next": null}`), newest first as the call answers, made from the four live updates of Hrizzup's example story in the hand-over agreement's examples, in the API's shape; it was not fetched from a live call. The post's sources are taken from the updates it relied on, because the brief's `## Sources` is one flat list.
+- `brief.md`: the story's brief, as Hrizzup builds it (the same text Hrizzup's own tests use for this story). Together they are the only input: the sample uses no other source.
+
+## What it adds
+
+The brief's desk shows an explainer video and a timeline post, and no breakdown, so a written take that leads with the newest update (the correction) and keeps known and unconfirmed apart is new on the desk. The brief shows each post on the desk cut at 200 characters, so a real agent would read the two in full (the posts call) before deciding. This sample repeats the story's updates on purpose, to show the skill, and a real post goes ahead only when it adds something the desk lacks.
 
 ## How it was made
 
-No command ran: this skill needs nothing (its needs are "Nothing"), so there are no scripts, packages, FFmpeg or models. The post was written by hand, from `brief.md` only, and checked against the guide's list.
+No command ran: this skill needs nothing (its needs are "Nothing"), so there are no scripts, packages, FFmpeg or models. The post was written by hand, from `updates.json` and `brief.md` only, and checked against the guide's list.
 
 - Machine: a Mac with Apple silicon. Date: 18 November 2026.
 
@@ -22,5 +27,6 @@ No command ran: this skill needs nothing (its needs are "Nothing"), so there are
 ## Files
 
 - `README.md`: this file.
-- `brief.md`: the input.
+- `updates.json`: the updates call's answer, the input for the claims and their links.
+- `brief.md`: the story's brief.
 - `post.json`: the post.

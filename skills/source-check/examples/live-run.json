@@ -7,8 +7,8 @@
     "redirects": 0,
     "contentType": "text/html",
     "title": "Example Domain",
-    "lastModified": "Mon, 16 Nov 2026 00:30:20 GMT",
-    "checkedAt": "2026-11-18T10:38:02Z",
+    "lastModified": "Mon, 16 Nov 2026 00:26:08 GMT",
+    "checkedAt": "2026-11-18T11:05:16Z",
     "problem": null
   },
   {
@@ -20,7 +20,7 @@
     "contentType": "text/html",
     "title": "Wikipedia",
     "lastModified": "Tue, 10 Nov 2026 07:56:33 GMT",
-    "checkedAt": "2026-11-18T10:38:03Z",
+    "checkedAt": "2026-11-18T11:05:17Z",
     "problem": null
   },
   {
@@ -32,7 +32,7 @@
     "contentType": null,
     "title": null,
     "lastModified": null,
-    "checkedAt": "2026-11-18T10:38:04Z",
+    "checkedAt": "2026-11-18T11:05:19Z",
     "problem": "only https:// links are checked (this one is http://)"
   },
   {
@@ -44,7 +44,7 @@
     "contentType": "text/html",
     "title": null,
     "lastModified": null,
-    "checkedAt": "2026-11-18T10:38:04Z",
+    "checkedAt": "2026-11-18T11:05:19Z",
     "problem": "redirects to http://www.iana.org/help/example-domains, not followed: only https:// links are checked (this one is http://)"
   }
 ]

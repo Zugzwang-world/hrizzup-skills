@@ -337,8 +337,11 @@ def save_image(canvas: Image.Image, path: "str | os.PathLike[str]") -> str:
         clean.save(buffer, "WEBP", quality=QUALITY, method=6)
     else:
         clean.save(buffer, "JPEG", quality=QUALITY, optimize=True)
-    with open(target, "wb") as f:
-        f.write(buffer.getvalue())
+    try:
+        with open(target, "wb") as f:
+            f.write(buffer.getvalue())
+    except OSError as error:
+        raise DrawError("can't write %s: %s" % (target, error.strerror or type(error).__name__))
     return target
 
 

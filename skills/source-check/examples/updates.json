@@ -1,0 +1,46 @@
+{
+  "updates": [
+    {
+      "id": "01a19f94-ede0-724c-8617-706149fba27c",
+      "headline": "Correction: only Delhi's primary schools moved online; schools in Noida and Gurugram stay open",
+      "body": "An earlier update said schools across Delhi NCR had moved online. Only Delhi's primary schools have; schools in Noida and Gurugram remain open.",
+      "reportedAt": "2026-11-03T03:50:00Z",
+      "sources": [
+        "https://example.com/sources/delhi-schools-clarification"
+      ],
+      "corrects": "01a19ae2-d780-7a89-96fb-aeeefeab4196"
+    },
+    {
+      "id": "01a19ba7-ae20-7fb8-a847-35438eddf011",
+      "headline": "Building work stops and diesel trucks are kept out of Delhi under the emergency rules",
+      "body": "The emergency rules also ask offices to let staff work from home where they can.",
+      "reportedAt": "2026-11-02T09:40:00Z",
+      "sources": [
+        "https://example.com/sources/delhi-emergency-rules"
+      ],
+      "corrects": null
+    },
+    {
+      "id": "01a19ae2-d780-7a89-96fb-aeeefeab4196",
+      "headline": "Schools across Delhi NCR move classes online until Friday",
+      "body": null,
+      "reportedAt": "2026-11-02T06:05:00Z",
+      "sources": [
+        "https://example.com/sources/delhi-schools-notice",
+        "https://example.org/posts/noida-parents-group"
+      ],
+      "corrects": null
+    },
+    {
+      "id": "01a199e9-d180-7c0c-9f20-0bf0fc79c403",
+      "headline": "Air quality across Delhi NCR falls to 'severe' as readings pass 450",
+      "body": "Readings in Delhi, Noida and Gurugram crossed 450 before dawn on Monday, the worst so far this season. Doctors advise people with breathing problems to stay indoors.",
+      "reportedAt": "2026-11-02T01:30:00Z",
+      "sources": [
+        "https://example.com/sources/delhi-air-quality-monday-morning"
+      ],
+      "corrects": null
+    }
+  ],
+  "next": null
+}

@@ -33,6 +33,7 @@ import re
 import socket
 import ssl
 import sys
+import threading
 import time
 import unicodedata
 import zlib
@@ -48,7 +49,7 @@ RETRY_AFTER_LIMIT = 30
 TITLE_MAX = 200
 HTML_TYPES = ("text/html", "application/xhtml+xml")
 LINK_IN_TEXT = re.compile(r"https?://[^\s<>\"'`\]\[]+", re.I)
-TITLE_TAG = re.compile(r"<title[^>]*>(.*?)</title>", re.I | re.S)
+TITLE_TAG_ENDS = b">\t\n\r /"  # what may follow "<title" for it to be the tag
 CHARSET = re.compile(r"charset=([A-Za-z0-9._-]+)", re.I)
 HOST_NAME = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\.?$")
 PATH_SAFE = "/%:@!$&'()*+,;=-._~"  # kept as they are: the characters a path may hold, and existing %-escapes
@@ -71,18 +72,48 @@ class NetworkProblem(Exception):
 # Which addresses are fine to visit
 # ---------------------------------------------------------------------------------------------
 
+NAT64 = ipaddress.ip_network("64:ff9b::/96")  # carries an IPv4 address in its last 32 bits
+NAT64_LOCAL = ipaddress.ip_network("64:ff9b:1::/48")  # for use inside one network
+SIX_TO_FOUR = ipaddress.ip_network("2002::/16")  # carries an IPv4 address in bits 16 to 48
+TEREDO = ipaddress.ip_network("2001::/32")  # carries a server's and a client's IPv4 address
+SIX_TO_FOUR_RELAY = ipaddress.ip_network("192.88.99.0/24")
+
+
+def embedded_addresses(ip):
+    """The IPv4 addresses an IPv6 address carries (NAT64, 6to4, Teredo), or None if it carries none."""
+    if ip in NAT64:
+        return [ipaddress.IPv4Address(ip.packed[-4:])]
+    if ip in SIX_TO_FOUR:
+        return [ipaddress.IPv4Address(ip.packed[2:6])]
+    if ip in TEREDO:
+        server, client = ip.teredo
+        return [server, client]
+    return None
+
+
 def unsafe_reason(address):
-    """Why an IP address (as text) must not be visited; None when it is on the public internet."""
+    """Why an IP address (as text) must not be visited; None when it is on the public internet. An IPv6
+    address that carries an IPv4 address (::ffff:a.b.c.d, NAT64, 6to4, Teredo) is judged by the one inside."""
     try:
         ip = ipaddress.ip_address(str(address).split("%")[0])
     except ValueError:
         return "isn't an address"
     if ip.version == 6:
         if ip.ipv4_mapped is not None:
-            ip = ip.ipv4_mapped  # judge the IPv4 address inside ::ffff:a.b.c.d
-        elif ip in ipaddress.ip_network("2002::/16") or ip in ipaddress.ip_network("64:ff9b::/96") \
-                or ip in ipaddress.ip_network("2001::/32"):
-            return "is a tunnelled address that carries another address inside it"
+            return unsafe_reason(str(ip.ipv4_mapped))
+        carried = embedded_addresses(ip)
+        if carried is not None:
+            for inner in carried:
+                reason = unsafe_reason(str(inner))
+                if reason:
+                    return "carries %s, which %s" % (inner, reason)
+            return None
+        if ip in NAT64_LOCAL:
+            return "is a NAT64 address for use inside one network"
+        if ip.is_site_local:
+            return "is a site-local address (a private network's)"
+    elif ip in SIX_TO_FOUR_RELAY:
+        return "is a 6to4 relay address, which isn't a site"
     checks = (
         ("is_unspecified", "is an unspecified address"),
         ("is_loopback", "is this machine's own address"),
@@ -174,21 +205,58 @@ class PinnedConnection(http.client.HTTPSConnection):
         super().__init__(host, port, timeout=timeout, context=context)
         self.pinned_address = address
         self.tls_context = context
+        self.raw = None  # the plain socket, kept so the deadline can cut it
+        self.aborted = False
 
     def connect(self):
         raw = socket.create_connection((self.pinned_address, self.port), timeout=self.timeout)
+        self.raw = raw
         try:
             self.sock = self.tls_context.wrap_socket(raw, server_hostname=self.host)
         except Exception:
             raw.close()
             raise
 
+    def abort(self):
+        """Cut the connection from another thread (the deadline's): a read that is waiting ends at once."""
+        self.aborted = True
+        for sock in (self.sock, self.raw):
+            if sock is not None:
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+
+
+def problem_from(error, timeout):
+    """The NetworkProblem a socket, TLS or HTTP error stands for."""
+    if isinstance(error, ssl.SSLCertVerificationError):
+        return NetworkProblem("its certificate isn't trusted (%s)" % (
+            clean(str(getattr(error, "verify_message", "") or ""), 100) or "verification failed"), "tls")
+    if isinstance(error, ssl.SSLError):
+        return NetworkProblem("the secure connection failed (%s)" % (
+            clean(str(getattr(error, "reason", "") or ""), 100) or "TLS error"), "tls")
+    if isinstance(error, socket.timeout):
+        return NetworkProblem("no answer in %s seconds" % timeout, "timeout")
+    if isinstance(error, (http.client.RemoteDisconnected, ConnectionResetError, http.client.BadStatusLine)):
+        return NetworkProblem("the site closed the connection without answering", "reset")
+    if isinstance(error, http.client.HTTPException):
+        return NetworkProblem("the site's answer wasn't valid HTTP (%s)" % type(error).__name__, "other")
+    if isinstance(error, (UnicodeError, ValueError)):
+        return NetworkProblem("the link can't be sent as a request (%s)" % type(error).__name__, "other")
+    return NetworkProblem("couldn't connect (%s)" % (getattr(error, "strerror", None) or type(error).__name__), "connect")
+
 
 def fetch(host, address, port, method, path, timeout):
     """One request to a checked address: (status, headers with lower-case names, up to 64 KiB of body).
-    A function of its own, so tests can replace it."""
+    The whole request, connecting and reading, gets `timeout` seconds in all: a site that answers a byte at
+    a time is cut off at the deadline, not waited for. A function of its own, so tests can replace it."""
     context = ssl.create_default_context()
     connection = PinnedConnection(host, address, port, timeout, context)
+    watchdog = threading.Timer(timeout, connection.abort)
+    watchdog.daemon = True
+    watchdog.start()
+    late = NetworkProblem("no complete answer in %s seconds" % timeout, "timeout")
     try:
         connection.request(method, path, headers={
             "User-Agent": USER_AGENT, "Accept": "text/html,*/*;q=0.8", "Accept-Encoding": "gzip, identity",
@@ -197,24 +265,15 @@ def fetch(host, address, port, method, path, timeout):
         response = connection.getresponse()
         headers = {name.lower(): value for name, value in response.getheaders()}
         body = response.read(MAX_READ) if method == "GET" else b""
+        if connection.aborted:
+            raise late  # the deadline cut the reading short
         return response.status, headers, body
-    except ssl.SSLCertVerificationError as error:
-        raise NetworkProblem("its certificate isn't trusted (%s)" % (
-            clean(str(getattr(error, "verify_message", "") or ""), 100) or "verification failed"), "tls")
-    except ssl.SSLError as error:
-        raise NetworkProblem("the secure connection failed (%s)" % (
-            clean(str(getattr(error, "reason", "") or ""), 100) or "TLS error"), "tls")
-    except socket.timeout:
-        raise NetworkProblem("no answer in %s seconds" % timeout, "timeout")
-    except (http.client.RemoteDisconnected, ConnectionResetError, http.client.BadStatusLine):
-        raise NetworkProblem("the site closed the connection without answering", "reset")
-    except http.client.HTTPException as error:
-        raise NetworkProblem("the site's answer wasn't valid HTTP (%s)" % type(error).__name__, "other")
-    except (UnicodeError, ValueError) as error:
-        raise NetworkProblem("the link can't be sent as a request (%s)" % type(error).__name__, "other")
-    except OSError as error:
-        raise NetworkProblem("couldn't connect (%s)" % (error.strerror or type(error).__name__), "connect")
+    except (OSError, http.client.HTTPException, ValueError) as error:
+        if connection.aborted:
+            raise late
+        raise problem_from(error, timeout)
     finally:
+        watchdog.cancel()
         connection.close()
 
 
@@ -280,7 +339,7 @@ class Visitor:
 
 def retry_after_seconds(value):
     value = value.strip()
-    if value.isdigit():
+    if value.isascii() and value.isdigit():  # not "2" with a superscript or an Arabic-Indic digit
         return int(value)
     try:
         moment = parsedate_to_datetime(value)
@@ -302,26 +361,45 @@ def clean(text, limit):
     return " ".join(kept.split())[:limit]
 
 
+def find_title(body):
+    """The bytes between the first `<title ...>` and `</title` of a page, or None, in one pass: every search
+    moves forward, so even a page that is nothing but `<title>` takes no longer than its length. (The page is
+    lower-cased as bytes, which changes only ASCII letters, so positions in it are positions in the page.)"""
+    lowered = body.lower()
+    start = lowered.find(b"<title")
+    while start != -1:
+        follower = lowered[start + 6:start + 7]
+        if follower and follower in TITLE_TAG_ENDS:
+            opened = lowered.find(b">", start)
+            if opened == -1:
+                return None
+            closed = lowered.find(b"</title", opened)
+            return None if closed == -1 else body[opened + 1:closed]
+        start = lowered.find(b"<title", start + 6)
+    return None
+
+
 def page_title(headers, body):
     if not body or media_type(headers) not in HTML_TYPES:
         return None
-    if headers.get("content-encoding", "").strip().lower() in ("gzip", "x-gzip"):
+    encoding = headers.get("content-encoding", "identity").strip().lower()
+    if encoding in ("gzip", "x-gzip"):
         try:
-            body = zlib.decompressobj(31).decompress(body)
+            # only the first 64 KiB of what it unpacks to: a small file can unpack to gigabytes
+            body = zlib.decompressobj(31).decompress(body, MAX_READ)
         except zlib.error:
             return None
-    elif headers.get("content-encoding", "identity").strip().lower() != "identity":
+    elif encoding != "identity":
+        return None
+    found = find_title(body[:MAX_READ])
+    if found is None:
         return None
     charset = CHARSET.search(headers.get("content-type", ""))
     try:
-        text = body.decode(charset.group(1) if charset else "utf-8", errors="replace")
+        text = found.decode(charset.group(1) if charset else "utf-8", errors="replace")
     except LookupError:
-        text = body.decode("utf-8", errors="replace")
-    found = TITLE_TAG.search(text)
-    if not found:
-        return None
-    title = clean(html.unescape(found.group(1)), TITLE_MAX)
-    return title or None
+        text = found.decode("utf-8", errors="replace")
+    return clean(html.unescape(text), TITLE_MAX) or None
 
 
 def explain(status):
@@ -435,10 +513,13 @@ def make_parser():
     )
     parser.add_argument("urls", nargs="*", help="the links to check (https:// only)")
     parser.add_argument("--file", help="a text file to take every web address from (a brief, a post, a list)")
+    parser.add_argument("--section", help="with --file, take the addresses only from the markdown section with this heading, "
+                                          "such as Sources (a brief's other sections quote other agents' posts)")
     parser.add_argument("--json", dest="json_out", help="write the reports as JSON to this file")
     parser.add_argument("--markdown", dest="markdown_out", help="write the reports as a Markdown table to this file")
     parser.add_argument("--delay", type=float, default=1.0, help="seconds between two requests to one host (default 1.0)")
-    parser.add_argument("--timeout", type=float, default=15.0, help="seconds to wait for an answer (default 15)")
+    parser.add_argument("--timeout", type=float, default=15.0,
+                        help="seconds each request may take in all, however slowly the site answers (default 15)")
     return parser
 
 
@@ -454,6 +535,29 @@ def write_report(path, text):
     return {"path": path, "bytes": len(data), "width": None, "height": None, "seconds": None}
 
 
+def section_of(text, name):
+    """The lines of the markdown section whose `## ` heading is `name`, up to the next `## ` heading; or None."""
+    found, inside = [], False
+    for line in text.split("\n"):
+        if line.startswith("## "):
+            if inside:
+                break
+            inside = line[3:].strip() == name.strip()
+            continue
+        if inside:
+            found.append(line)
+    return "\n".join(found) if inside else None
+
+
+def output_problem(paths):
+    """Why an output file can't be written (its folder is missing or locked), or None."""
+    for path in paths:
+        folder = os.path.dirname(os.path.abspath(path))
+        if not os.path.isdir(folder) or not os.access(folder, os.W_OK):
+            return "the folder for %s doesn't exist or can't be written to" % path
+    return None
+
+
 def main(argv=None, visitor=None):
     if sys.version_info < (3, 10):
         print("check_links.py needs Python 3.10 or newer", file=sys.stderr)
@@ -466,15 +570,26 @@ def main(argv=None, visitor=None):
         clash = "--json and --markdown name the same file"
     elif args.file and os.path.abspath(args.file) in targets:
         clash = "an output would overwrite --file, an input"
+    elif args.section and not args.file:
+        clash = "--section needs --file"
+    else:
+        clash = output_problem([p for p in (args.json_out, args.markdown_out) if p])  # before any request is made
     if clash:
         print("check_links.py: " + clash, file=sys.stderr)
         return finish(False, [], [], clash, 2)
     try:
         if args.file:
             with open(args.file, encoding="utf-8") as f:
-                for link in links_in(f.read()):
-                    if link not in urls:
-                        urls.append(link)
+                text = f.read()
+            if args.section:
+                text = section_of(text, args.section)
+                if text is None:
+                    message = "%s has no `## %s` section" % (args.file, args.section)
+                    print("check_links.py: " + message, file=sys.stderr)
+                    return finish(False, [], [], message, 2)
+            for link in links_in(text):
+                if link not in urls:
+                    urls.append(link)
     except (OSError, UnicodeDecodeError) as error:
         message = "can't read %s: %s" % (args.file, error)
         print("check_links.py: " + message, file=sys.stderr)
@@ -499,10 +614,15 @@ def main(argv=None, visitor=None):
         print("%s  %s  %s" % (report["status"] if report["status"] is not None else "---", url, report["problem"] or "opens"),
               file=sys.stderr)
     outputs = []
-    if args.json_out:
-        outputs.append(write_report(args.json_out, json.dumps(reports, ensure_ascii=False, indent=2) + "\n"))
-    if args.markdown_out:
-        outputs.append(write_report(args.markdown_out, markdown_table(reports)))
+    try:
+        if args.json_out:
+            outputs.append(write_report(args.json_out, json.dumps(reports, ensure_ascii=False, indent=2) + "\n"))
+        if args.markdown_out:
+            outputs.append(write_report(args.markdown_out, markdown_table(reports)))
+    except OSError as error:
+        message = "can't write a report: %s" % (error.strerror or type(error).__name__)
+        print("check_links.py: " + message, file=sys.stderr)
+        return finish(False, outputs, [], message, 2)
     checks = [{"url": r["url"], "status": r["status"], "ok": r["ok"]} for r in reports]
     return finish(True, outputs, checks, None, 0)
 

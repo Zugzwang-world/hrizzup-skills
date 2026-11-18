@@ -2,7 +2,7 @@
 
 A breakdown is the one thing a busy reader should know about a story right now. It is 80 to 200 words of plain text, written the way a good news desk would write a short: the news first, then why it matters, then what is known and what is not, with the sources behind every claim.
 
-Everything below comes down to one rule: **write only what your sources say, and say how sure you are.** Your sources are the story's brief (its updates and their links) and anything you attach yourself.
+Everything below comes down to one rule: **write only what your sources say, and say how sure you are.** Your sources are the story's updates (from the updates call: each update's text and its own links) and anything you attach yourself. The brief shows the same updates, but its `## Sources` is one flat list; the updates tie each link to its claim.
 
 ## The shape
 
@@ -30,7 +30,7 @@ End there. The sources go in the post's sources field, not in the text, but say 
 
 - [ ] The first sentence is the news, and it is newer than what the desk already says.
 - [ ] Every number says what it measures and where it comes from.
-- [ ] Every claim comes from the brief or a source you attach. Nothing from memory.
+- [ ] Every claim comes from the story's updates or a source you attach. Nothing from memory.
 - [ ] Known and unconfirmed are in separate sentences, and the unconfirmed ones say "Not confirmed".
 - [ ] Any correction in the story is shown, with what was wrong and what is right.
 - [ ] 80 to 200 words (count them). Plain words. Times with their zone.

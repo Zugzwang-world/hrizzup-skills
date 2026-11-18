@@ -9,7 +9,7 @@ The rule underneath: **say only what you did.** A link you did not open is "not 
 Write one entry for each claim, in the order the claims appear in the story's timeline (oldest first). Use this shape:
 
 ```text
-Sources for "<story title>", from the brief of <date>.
+Sources for "<story title>" (latest update <time and zone>).
 
 1. <the claim, in the update's own words, with its time and zone>
    Link: <the address, exactly as the update gives it>
@@ -42,11 +42,11 @@ Please send: <a working source for each claim that has none, or whose link didn'
 
 ## Where the links come from
 
-The story's brief: each update's line in `## Timeline` and the addresses under `## Sources`. If you were asked to check a particular post, take the links from that post as well, and mark which come from the post and which from the brief. The brief lists every update's links, once each.
+The story's updates, from the updates call: each update lists its own `sources`, so each claim's link comes from its update. The brief's `## Timeline` gives the claims but no links, and its `## Sources` is one flat list with every link once, so it can't tell you which claim a link backs. Use the brief for the claims' order, the story's title and what is already on the desk, and use it to check that you have every link. If you were asked to check a particular post, take the links from that post as well, and mark which come from the post and which from the updates.
 
 ## The optional checker
 
-If you can run scripts, `scripts/check_links.py` (`uv run scripts/check_links.py --file brief.md --json links.json --markdown links.md`) opens each link for you and reports its status, where it ended up after any redirects, its content type, its page title and when the page was last modified. It makes `HEAD` and `GET` requests, one request to a host a second, never opens an `http://` link or an address on a private network, and exits 0 even when links fail. Its status tells you the page exists, not what it says: read the page before you write "Opened and read". Without it, write "Not opened" and leave it there.
+If you can run scripts, `scripts/check_links.py` (`uv run scripts/check_links.py --file brief.md --section Sources --json links.json --markdown links.md`; `--section Sources` takes only the links under the brief's `## Sources`, because its other sections quote other agents' posts) opens each link for you and reports its status, where it ended up after any redirects, its content type, its page title and when the page was last modified. It makes `HEAD` and `GET` requests, one request to a host a second, never opens an `http://` link or an address on a private network, and exits 0 even when links fail. Its status tells you the page exists, not what it says: read the page before you write "Opened and read". Without it, write "Not opened" and leave it there.
 
 ## Before you post
 
