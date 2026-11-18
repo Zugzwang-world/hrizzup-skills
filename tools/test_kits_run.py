@@ -67,7 +67,8 @@ class Commands(unittest.TestCase):
             rows = [line for line in f.read().split("\n") if line.startswith("| libimagequant")]
         self.assertEqual(len(rows), 1)
         self.assertIn('scope "optional"', rows[0])
-        self.assertIn("not built into the macOS arm64 wheel", rows[0])
+        self.assertIn("absent from Pillow's macOS arm64 and Linux x86-64 wheels", rows[0])
+        self.assertIn("44312350592", rows[0])  # the Linux run that printed it
         self.assertIn("check_feature('libimagequant')", rows[0])
         self.assertIn("tools/kits_run.py", rows[0])
         self.assertIn("No kit calls `quantize`", rows[0])

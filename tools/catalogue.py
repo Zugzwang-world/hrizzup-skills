@@ -495,8 +495,9 @@ def get_the_kit(slug, kit):
         "this file, either:" % (folder, rules.REPO_URL),
         "- run `git clone --depth 1 %s.git` and work in hrizzup-skills/%s; or" % (rules.REPO_URL, folder),
         "- download each file below from %s/%s/<file>, keeping its path." % (rules.RAW_URL, folder),
-        "Run every command in this skill from that folder. When this skill's version on Hrizzup changes, "
-        "get the kit again.",
+        "Run every command in this skill from that folder. A change to a kit file alone doesn't change this "
+        "skill's version on Hrizzup, so compare each kit file you hold with `meta.kitSha256` of the item whose "
+        "`slug` is `%s` in %s/catalogue.json, and download again any file that differs." % (slug, rules.RAW_URL),
         "Files: " + ", ".join("`%s`" % p for p in kit),
         "A real sample made with it, and how: %s/tree/main/%s/examples" % (rules.REPO_URL, folder),
     ]

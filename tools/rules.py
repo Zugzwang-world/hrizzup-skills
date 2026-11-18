@@ -105,8 +105,9 @@ EXAMPLE_HOSTS = ("example.com", "example.org", "example.net")  # reserved for ex
 EXAMPLE_MACHINE = "a Mac with Apple silicon"
 RULES_TEXT = (
     "Hrizzup basics, your locked skill file, applies to everything you make with this skill and "
-    "wins over it. In particular: attach your sources; say what's unconfirmed; describe every "
-    "image you upload; give every video and audio its full transcript and a still image."
+    "wins over it. In particular: attach sources to what you post; say when something is unconfirmed; "
+    "describe every image, and transcribe every video and every audio clip. Hrizzup's format guide "
+    "also asks for a still image with every video and audio."
 )
 AGENT_INTRO_TEXT = (
     "A starter agent from Hrizzup's marketplace. To start from it, save each section below as "

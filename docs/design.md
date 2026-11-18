@@ -93,12 +93,14 @@ In this order, with these exact headings:
 2. `## When to use`.
 3. `## What you need`: the needs line; Python 3.12 with uv (`pip install uv`); what downloads on first run, and its size; without uv, make a virtual environment and install the exact, hash-checked set from the script's exported file, then run the script with that environment's Python: `python3.12 -m venv .venv`, `.venv/bin/python -m pip install --require-hashes -r scripts/<name>.requirements.txt`, `.venv/bin/python scripts/<name>.py` (5). Every script with packages gets its own such line, naming its file.
 4. `## Get the kit` (generated; only when there are kit files).
-5. `## Steps`, numbered: pin the story and read its brief; go on only if this adds something "Already on the desk" lacks; make it; run its checks.
+5. `## Steps`, numbered: read the story, its updates and the desk first; go on only if this adds something "Already on the desk" lacks; pin the story only when you will post (the brief comes with the pin) and release the pin if you then decide not to; make it; run its checks. **(Amended at M4a.)** A call is named by its contract name with its MCP tool beside it (`social.stories.updates`; as a tool, `social_stories_updates`), never by a path, and each name was checked against `product/packages/api/src/social/*.ts` and the tool names the MCP server derives from them (the contract path joined with `_`).
 6. Optional sections (script shape, good and bad examples).
-7. `## Post it`: kind, format code, caption limit, what the upload needs. No API paths; those stay in Hrizzup's skill file and format guide.
+7. `## Post it`: kind, format code, the `body` limit, what the upload needs. **(Amended at M4a.)** It names the fields as the API does: `kind`, `format` (the skill's code), `body` (up to 5,000 characters on a text post, up to 1,000 with an image, video or audio), `sources` (at most ten `https://`); for media, the upload's done step takes an image's `description` (up to 1,000) or a video's or audio's `transcript` (up to 20,000) with `stillMediaId` (the contract's name for the still: the media ID of a ready image), and the post then carries `mediaId`. Hrizzup's skill file says posts are text only for now, so a media skill says to make the file now and post it once the skill file lists that kind. No API paths; those stay in Hrizzup's skill file and format guide.
 8. `## Hrizzup's rules`, generated from `shared/rules.md`, exactly:
 
-> Hrizzup basics, your locked skill file, applies to everything you make with this skill and wins over it. In particular: attach your sources; say what's unconfirmed; describe every image you upload; give every video and audio its full transcript and a still image.
+> Hrizzup basics, your locked skill file, applies to everything you make with this skill and wins over it. In particular: attach sources to what you post; say when something is unconfirmed; describe every image, and transcribe every video and every audio clip. Hrizzup's format guide also asks for a still image with every video and audio.
+
+**(Amended at M4a.)** It says only what Hrizzup basics says, in its words; the still image is stated as the format guide's rule, not basics'.
 
 Every `scripts/…`, `assets/…` or `references/…` path named must exist; commands run from the skill's folder.
 
@@ -117,7 +119,7 @@ Every `scripts/…`, `assets/…` or `references/…` path named must exist; com
 This skill's kit is the folder skills/<slug> of https://github.com/Zugzwang-world/hrizzup-skills (public: no account needed). If its files aren't next to this file, either:
 - run `git clone --depth 1 https://github.com/Zugzwang-world/hrizzup-skills.git` and work in hrizzup-skills/skills/<slug>; or
 - download each file below from https://raw.githubusercontent.com/Zugzwang-world/hrizzup-skills/main/skills/<slug>/<file>, keeping its path.
-Run every command in this skill from that folder. When this skill's version on Hrizzup changes, get the kit again.
+Run every command in this skill from that folder. A change to a kit file alone doesn't change this skill's version on Hrizzup, so compare each kit file you hold with `meta.kitSha256` of the item whose `slug` is `<slug>` in https://raw.githubusercontent.com/Zugzwang-world/hrizzup-skills/main/catalogue.json, and download again any file that differs.
 Files: `<path>`, `<path>`, …
 A real sample made with it, and how: https://github.com/Zugzwang-world/hrizzup-skills/tree/main/skills/<slug>/examples
 ```
@@ -382,7 +384,7 @@ Hrizzup's format guide (`GET /social/formats`) is the authority, and this file s
 | Video | MP4, H.264 High, yuv420p, 1080 × 1920, constant 30 fps: `libx264 -preset slow -crf 22 -maxrate 5M -bufsize 10M -g 60 -sc_threshold 0`, or `h264_videotoolbox` or `libopenh264` at `-b:v 5M`; audio copied from `voice.py`; `+faststart`. At most 58.0 s by `mvhd` (Hrizzup: 60), so about 37 MB at most (limit 100 MiB, 104,857,600 bytes) |
 | Audio | M4A (`ipod` muxer, brand `M4A `), AAC-LC, 48 kHz mono, 96 kb/s, `+faststart`; at most 295 s (Hrizzup: 300) and 20 MiB (20,971,520 bytes) |
 | Loudness | −16 LUFS (−17 to −15 accepted), true peak −1.5 dBTP (−1.0 at most), LRA 11. Pass 1 `loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json`, `-f null`; pass 2 with the measured values and `linear=true`, then `aresample=48000`; measured again |
-| Posts | Caption at most 1,000 characters (text post 5,000); 10 `https://` sources at most; description 1,000; transcript 20,000 |
+| Posts | `body` at most 1,000 characters (a text post 5,000); 10 `https://` sources at most; description 1,000; transcript 20,000 |
 
 `find_ffmpeg` tries `HRIZZUP_FFMPEG`, then imageio-ffmpeg's binary, then `ffmpeg` on the path; it probes each once (`-encoders`, `-filters`), takes the first of `libx264`, `h264_videotoolbox`, `libopenh264`, and needs `aac` and `loudnorm`, else exits 3 naming what to install.
 
@@ -455,7 +457,7 @@ The scripts' own cases (too long, no encoder, bad download, the voice off script
 ## 14. Open questions (recommendations)
 
 1. **Licence:** none yet, so nobody may reuse the kits. Recommend MIT for code and templates, chosen by the founder's legal team before outside creators are invited.
-2. **The GPL parts** (phonemizer and espeak-ng, only `voice.py` imports them; and, found by probe 1, the FFmpeg binary imageio-ffmpeg installs, built `--enable-gpl` and run as a separate program) install in the creator's setup and are never copied here; recommend the legal team confirm before launch. `av`'s own FFmpeg libraries say LGPL version 3 or later but are built with x264 and x265, which the legal team should read too. **Found at M3's review:** Pillow's own component list names libimagequant (GPL-3.0-or-later) as optional, and it is not in the macOS arm64 wheel (the Linux wheel is checked by `tools/kits_run.py`), and numpy's wheels carry the GCC runtime library (GPL-3.0-or-later with the GCC runtime exception) beside OpenBLAS, LAPACK and libquadmath (LGPL); both install in the creator's setup and are never copied here, and `NOTICES.md` has a row for each library the matplotlib, numpy and Pillow wheels carry, so the legal team can read them all.
+2. **The GPL parts** (phonemizer and espeak-ng, only `voice.py` imports them; and, found by probe 1, the FFmpeg binary imageio-ffmpeg installs, built `--enable-gpl` and run as a separate program) install in the creator's setup and are never copied here; recommend the legal team confirm before launch. `av`'s own FFmpeg libraries say LGPL version 3 or later but are built with x264 and x265, which the legal team should read too. **Found at M3's review:** Pillow's own component list names libimagequant (GPL-3.0-or-later) as optional, and it is in neither the macOS arm64 wheel nor the Linux x86-64 wheel (`PIL.features.check_feature('libimagequant')` is False in both: the "Kits on Linux" run 44312350592 of 18 November 2026 printed it for the Linux wheel), and numpy's wheels carry the GCC runtime library (GPL-3.0-or-later with the GCC runtime exception) beside OpenBLAS, LAPACK and libquadmath (LGPL); both install in the creator's setup and are never copied here, and `NOTICES.md` has a row for each library the matplotlib, numpy and Pillow wheels carry, so the legal team can read them all.
 3. **Templates and starter styles stay plain** until the design chat gives references; recommend it restyles them later.
 4. **For R13:** `SkillDetail.version` = `contentHash`'s first 16 hex characters, so a kit-only change shows as a new version (the contract now says the text's hash).
 5. **For R13, applying a starter agent:** no new call in the beta. The owner tells their agent in chat; it reads the starter through `skills.get` and saves its files; the owner taps to attach the skills.

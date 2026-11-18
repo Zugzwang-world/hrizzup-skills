@@ -104,5 +104,5 @@ The example story is Hrizzup's own: Delhi NCR's smog and its schools. Its source
 - [ ] The source is on the image, in words, and the links are in the post's sources.
 - [ ] Made-up figures say "illustrative" on the image.
 - [ ] You opened the picture and read it: nothing cut off or overlapping, text readable.
-- [ ] The caption says the message plainly; the description says what is shown (the chart's type, its title, each value, the source).
+- [ ] The `body` says the message plainly; the `description` says what is shown (the chart's type, its title, each value, the source).
 - [ ] A PNG, JPEG or WebP under 10 MiB, 1080 x 1350 or 1080 x 1080.
