@@ -36,7 +36,7 @@ uv run --locked --python 3.12 scripts/still.py --title "Delhi NCR's air turns se
 - **Duration and size:** 60.6 seconds by the file's `mvhd` box (Hrizzup allows 300, the kit 295), 721,340 bytes (Hrizzup allows 20 MiB; the repository's budget for audio is 5 MiB), read with `hrizzup_media`: M4A with the brand `M4A `, AAC-LC, 48 kHz, mono, 93.6 kb/s (`ffprobe`), written with `+faststart`.
 - **Loudness, measured again after encoding:** `voice.py` measured the finished file: -16.3 LUFS, true peak -1.6 dBTP. The first encode's peak came out at -1.17 dBTP, above the -1.2 `voice.py` accepts, so it levelled again with a lower target, as designed. Measured again afterwards with `hrizzup_media.loudnorm_measure`: -16.29 LUFS, true peak -1.64 dBTP, loudness range 3.8. Measured a third time with FFmpeg 9.0.2's own `ebur128` filter (Homebrew's, not part of the kit): -16.3 LUFS, true peak -1.6 dBTP, loudness range 3.4. Hrizzup wants -17 to -15 LUFS and a true peak of -1.0 dBTP at most. FFmpeg's loudnorm used its dynamic mode for the second pass (the speech's peaks are about 17 dB over its average, more than the 14.5 dB between the target level and the target peak, so a straight gain would break the peak limit), and the encoded file's peak can come out above the -1.5 dBTP asked for, as the AAC encoder adds to it; `voice.py` levels again with a lower target when the encoded peak is above -1.2 (the limit is -1.0).
 - **No path in a binary:** `strings` on `narration.m4a` and on `still.png` prints no home-folder path ("checked"). Neither holds metadata: FFmpeg is told to write none (no copied metadata, no encoder tag), and Pillow writes only the picture.
-- **The still:** `still.png` is 1080 x 1080, 27,921 bytes, a PNG (the repository's budget for a picture is 2 MiB), read with `hrizzup_media`.
+- **The still:** `still.png` is 1080 x 1080, 34,462 bytes, a PNG (the repository's budget for a picture is 2 MiB), read with `hrizzup_media`. It has no picture, so `still.py` sets the type alone: the title large in capitals on two lines, the line under it, the signature at the foot, and no empty block where a picture would be (an earlier run drew a flat accent block there).
 - **Without the models:** the same `voice.py` command with `--offline` against an empty models folder exits 3 and says which files are missing, that `--offline` was given, how much it would download (about 136 MiB) and to run it once without `--offline`. With the real download into that empty folder it fetched both Kokoro files in about 30 seconds and made the first narration.
 
 ## Why it passes its guide
@@ -49,7 +49,7 @@ uv run --locked --python 3.12 scripts/still.py --title "Delhi NCR's air turns se
 ## Results
 
 - `narration.m4a`: the narration, 60.6 seconds, 721,340 bytes.
-- `still.png`: the audio's still, 1080 x 1080, 27,921 bytes.
+- `still.png`: the audio's still, 1080 x 1080, 34,462 bytes.
 - `post.json`: the post the sample would make (without its `requestId`): an audio post, format `audio-brief`, a 548-character `body`, the five example sources behind the facts, the script's shown text as the `transcript` (878 characters), and the still's description.
 
 ## Files

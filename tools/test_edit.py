@@ -610,6 +610,13 @@ class Stills(Folder):
                 template = json.load(f)
             self.assertEqual({t["slot"] for t in template["texts"]}, {"title", "subtitle"})
             self.assertIsNotNone(template["signature"])
+        self.assertEqual(still.TYPE_ONLY, {(1080, 1920): "still-tall-type", (1080, 1080): "still-square-type"})  # the same two, without a picture
+        for name in still.TYPE_ONLY.values():
+            with open(os.path.join(SHARED, "..", "assets", "templates", name + ".json"), encoding="utf-8") as f:
+                template = json.load(f)
+            self.assertEqual({t["slot"] for t in template["texts"]}, {"title", "subtitle"})
+            self.assertIsNone(template["picture"])
+            self.assertIsNotNone(template["signature"])
 
 
 # ---------------------------------------------------------------------------------------------
@@ -709,6 +716,47 @@ class Drawing(UsesTheExplainersDrawingModule):
                     self.assertEqual(code, 0, line)
                     self.assertEqual("%dx%d" % (line["outputs"][0]["width"], line["outputs"][0]["height"]), size)
                     self.assertEqual(media.problems(media.inspect(out), "image", budget=False), [])
+
+    def test_a_still_with_no_picture_is_type_alone_with_no_empty_block(self):
+        from PIL import Image
+
+        accent = (200, 16, 46)
+        style = self.json_file("accent-style.json", {"signature": "Illustrative sample", "accent": "#c8102e"})
+        for size in ("1080x1920", "1080x1080"):
+            for subtitle in ("An illustrative one-minute brief", None):
+                out = self.path("type-%s-%s.png" % (size, bool(subtitle)))
+                argv = ["--title", "Delhi NCR's air turns severe", "--size", size, "--style", style, "--out", out]
+                if subtitle:
+                    argv += ["--subtitle", subtitle]
+                with self.subTest(size=size, subtitle=bool(subtitle)):
+                    code, line, _err = run_main(still, argv)
+                    self.assertEqual(code, 0, line)
+                    canvas = Image.open(out).convert("RGB")
+                    # the style's accent colour is nowhere on it: no flat block stands in for a picture
+                    self.assertFalse(any(colour == accent for _count, colour in canvas.getcolors(canvas.width * canvas.height)), "the accent colour is on the still")
+                    # and no region of a tenth of the width by a twentieth of the height is one flat colour that isn't the paper
+                    paper = canvas.getpixel((0, 0))
+                    cell_w, cell_h = canvas.width // 10, canvas.height // 20
+                    for top in range(0, canvas.height - cell_h + 1, cell_h):
+                        for left in range(0, canvas.width - cell_w + 1, cell_w):
+                            extrema = canvas.crop((left, top, left + cell_w, top + cell_h)).getextrema()
+                            flat = all(low == high for low, high in extrema)
+                            self.assertFalse(flat and tuple(low for low, _high in extrema) != paper, "a flat block at %d,%d" % (left, top))
+
+    def test_the_type_alone_still_sets_the_title_large_with_its_line_under_it(self):
+        draw = sys.modules["hrizzup_draw"]
+        style = draw.load_style(None)
+        for size, name in still.TYPE_ONLY.items():
+            template = draw.load_template(still.TEMPLATES / (name + ".json"))
+            self.assertIsNone(template["picture"])
+            _canvas, placed = draw.render_template(
+                template, {"title": "Delhi NCR's air turns severe", "subtitle": "An illustrative one-minute audio brief"}, style, size)
+            sizes = {p["slot"]: p["size"] for p in placed}
+            self.assertGreaterEqual(sizes["title"], 100, size)
+            self.assertGreater(sizes["title"], 2 * sizes["subtitle"], size)
+            slots = {t["slot"]: t["box"] for t in template["texts"]}
+            self.assertLessEqual(slots["title"][3], slots["subtitle"][1])  # the line sits under the title's box
+            self.assertLess(slots["subtitle"][3], template["signature"]["box"][1])  # and above the signature
 
     def test_a_still_with_a_title_too_long_exits_1_and_leaves_nothing(self):
         out = self.path("s.png")

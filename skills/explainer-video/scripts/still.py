@@ -9,7 +9,8 @@
     1080x1920   a video's still (Hrizzup's format guide): the picture at the top, the title in capitals, a line under it
     1080x1080   an audio's still
 
-Without --image the picture's place is filled with the style's accent colour. The picture must be one you made or may use
+Without --image the still is type alone: the title set large in capitals and the line under it, composed in the frame with
+the signature, and no empty block where a picture would be. The picture must be one you made or may use
 (never someone else's meme image or a real person's likeness made up), at most 25 MiB, 40 megapixels and 8,192 px a side.
 The style (--style) gives the colours, the fonts and the signature; the templates have none of their own.
 
@@ -33,6 +34,7 @@ import hrizzup_media
 KIT = Path(__file__).resolve().parent.parent
 TEMPLATES = KIT / "assets" / "templates"
 SIZES = {(1080, 1920): "still-tall", (1080, 1080): "still-square"}  # a video's still, an audio's still
+TYPE_ONLY = {(1080, 1920): "still-tall-type", (1080, 1080): "still-square-type"}  # the same two, with no picture: the type alone
 MAX_TITLE = 120
 MAX_SUBTITLE = 200
 
@@ -145,7 +147,6 @@ def make(argv=None):
         return finish(False, [], [], str(error), 2)
     try:
         import hrizzup_draw
-        from PIL import Image
     except ImportError as error:
         message = ("a Python package is missing (%s): run this with `uv run scripts/still.py`, which installs them, or "
                    "make a virtual environment and install the exact set: `python3.12 -m venv .venv`, "
@@ -155,15 +156,10 @@ def make(argv=None):
         return finish(False, [], [], message, 3)
     try:
         style = hrizzup_draw.load_style(args.style)
-        template = hrizzup_draw.load_template(TEMPLATES / (SIZES[size] + ".json"))
+        template = hrizzup_draw.load_template(TEMPLATES / ((SIZES if args.image else TYPE_ONLY)[size] + ".json"))
         picture = hrizzup_draw.load_picture(args.image) if args.image else None
-        box = template["picture"]
         if picture is None:
-            width = int(round((box["box"][2] - box["box"][0]) * size[0]))
-            height = int(round((box["box"][3] - box["box"][1]) * size[1]))
-            colour = style["accent"]
-            picture = Image.new("RGB", (width, height), (int(colour[1:3], 16), int(colour[3:5], 16), int(colour[5:7], 16)))
-            log("still.py: no --image, so the picture's place is the style's accent colour")
+            log("still.py: no --image, so the still is the title and its line, set large, with no picture")
         canvas, _placed = hrizzup_draw.render_template(template, texts, style, size, picture=picture, focus=focus)
         written = hrizzup_draw.save_image(canvas, out)
     except InputError as error:
