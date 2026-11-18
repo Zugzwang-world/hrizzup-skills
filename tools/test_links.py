@@ -129,13 +129,28 @@ class Addresses(unittest.TestCase):
             self.assertIsNotNone(links.unsafe_reason(address), address)
 
     def test_the_addresses_own_checks_are_applied_even_when_what_it_carries_is_public(self):
-        # not an early return: a public IPv4 inside a NAT64 or mapped address doesn't excuse the address itself
-        for address in ("64:ff9b::808:808", "::ffff:8.8.8.8"):
-            for attribute in ("is_private", "is_loopback", "is_link_local", "is_multicast", "is_unspecified", "is_site_local"):
-                with mock.patch.object(ipaddress.IPv6Address, attribute, new_callable=mock.PropertyMock, return_value=True):
-                    self.assertIsNotNone(links.unsafe_reason(address), "%s with %s" % (address, attribute))
-            with mock.patch.object(ipaddress.IPv6Address, "is_global", new_callable=mock.PropertyMock, return_value=False):
-                self.assertIsNotNone(links.unsafe_reason(address), "%s not global" % address)
+        # not an early return: a public IPv4 inside a NAT64 address doesn't excuse the address itself
+        address = "64:ff9b::808:808"
+        for attribute in ("is_private", "is_loopback", "is_link_local", "is_multicast", "is_unspecified", "is_site_local"):
+            with mock.patch.object(ipaddress.IPv6Address, attribute, new_callable=mock.PropertyMock, return_value=True):
+                self.assertIsNotNone(links.unsafe_reason(address), "%s with %s" % (address, attribute))
+        with mock.patch.object(ipaddress.IPv6Address, "is_global", new_callable=mock.PropertyMock, return_value=False):
+            self.assertIsNotNone(links.unsafe_reason(address), "%s not global" % address)
+        with mock.patch.object(ipaddress.IPv6Address, "is_reserved", new_callable=mock.PropertyMock, return_value=True):
+            self.assertIsNone(links.unsafe_reason(address))  # ::/8 holds NAT64: the one property it is exempt from
+
+    def test_a_mapped_address_is_judged_by_its_ipv4_address_whatever_this_python_says_of_the_ipv6_ranges(self):
+        # older patch releases call ::ffff:0:0/96 reserved and private, newer ones judge the IPv4 address inside
+        for attribute in ("is_reserved", "is_private", "is_global"):
+            value = attribute == "is_reserved" or attribute == "is_private"
+            with mock.patch.object(ipaddress.IPv6Address, attribute, new_callable=mock.PropertyMock, return_value=value):
+                self.assertIsNone(links.unsafe_reason("::ffff:8.8.8.8"), attribute)
+                self.assertIsNotNone(links.unsafe_reason("::ffff:10.0.0.1"), attribute)
+                self.assertIsNotNone(links.unsafe_reason("::ffff:127.0.0.1"), attribute)
+
+    def test_an_ipv4_compatible_address_is_refused(self):
+        for address in ("::808:808", "::7f00:1", "::a00:1", "::1:2"):
+            self.assertIsNotNone(links.unsafe_reason(address), address)  # ::/96 (deprecated) sits in reserved ::/8
 
     def test_site_local_and_the_6to4_relay_are_refused(self):
         for address in ("fec0::1", "feff:ffff::1", "192.88.99.0", "192.88.99.1", "192.88.99.255"):

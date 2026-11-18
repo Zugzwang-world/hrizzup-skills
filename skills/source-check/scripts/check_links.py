@@ -82,8 +82,10 @@ SIX_TO_FOUR_RELAY = ipaddress.ip_network("192.88.99.0/24")
 def unsafe_reason(address):
     """Why an IP address (as text) must not be visited; None when it is on the public internet. It fails
     closed. 6to4 and Teredo addresses are refused outright (the IPv4 address in one doesn't say which host
-    answers). An IPv4-mapped (::ffff:a.b.c.d) or NAT64 (64:ff9b::/96) address must also carry a public IPv4
-    address. Every address then has its own checks applied."""
+    answers). An IPv4-mapped address (::ffff:a.b.c.d) is judged by its IPv4 address alone. A NAT64 address
+    (64:ff9b::/96) must carry a public IPv4 address and then gets its own checks, except is_reserved. Every
+    other address has its own checks applied. The same answer on every Python patch release: no check relies
+    on a property whose ranges changed between them (ipv4_mapped, is_reserved of ::/8, is_private of ::ffff:0:0/96)."""
     try:
         ip = ipaddress.ip_address(str(address).split("%")[0])
     except ValueError:
@@ -93,9 +95,9 @@ def unsafe_reason(address):
         if ip in SIX_TO_FOUR or ip in TEREDO:
             return "is a tunnel address (6to4 or Teredo), which doesn't say which host answers"
         if ip.ipv4_mapped is not None:
-            reason = unsafe_reason(str(ip.ipv4_mapped))
-            if reason:
-                return reason
+            # Judged by the IPv4 address inside, with the IPv4 rules, and by nothing else: Python's own IPv6
+            # range properties for ::ffff:0:0/96 differ between patch releases (some call it reserved).
+            return unsafe_reason(str(ip.ipv4_mapped))
         if ip in NAT64:
             nat64 = True
             inner = ipaddress.IPv4Address(ip.packed[-4:])
