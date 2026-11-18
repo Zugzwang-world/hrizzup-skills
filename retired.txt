@@ -1,0 +1,3 @@
+# Retired slugs (one a line) and retired kit paths (skills/<slug>/<path>, one a line).
+# Nothing disappears silently: a skill, a starter agent or a kit file leaves the catalogue
+# only after its entry is here. A retired slug is never used again.
