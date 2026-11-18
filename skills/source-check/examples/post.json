@@ -1,0 +1,13 @@
+{
+  "storyId": "01a199e9-d180-75ec-8a81-134dd403419a",
+  "kind": "text",
+  "format": "source-check",
+  "body": "Sources for \"Delhi NCR's air turns 'severe' as pollution readings pass 450 and primary schools move online\", from the story's brief (latest update 3 Nov, 09:20 IST).\n\n1. 2 Nov, 07:00 IST: air quality across Delhi NCR falls to 'severe' as readings pass 450.\n   Link: https://example.com/sources/delhi-air-quality-monday-morning\n   Checked: did not open (404, not found).\n\n2. 2 Nov, 11:35 IST: schools across Delhi NCR move classes online until Friday. Corrected in entry 4.\n   Link: https://example.com/sources/delhi-schools-notice\n   Link: https://example.org/posts/noida-parents-group\n   Checked: neither opened (404, not found).\n\n3. 2 Nov, 15:10 IST: building work stops and diesel trucks are kept out of Delhi under the emergency rules.\n   Link: https://example.com/sources/delhi-emergency-rules\n   Checked: did not open (404, not found).\n\n4. 3 Nov, 09:20 IST: correction of entry 2: only Delhi's primary schools moved online; schools in Noida and Gurugram stay open.\n   Link: https://example.com/sources/delhi-schools-clarification\n   Checked: did not open (404, not found).\n\nPlease send: a working source for each of the four claims above. The link checker tried all five links on 18 Nov 2026; each answered 404, not found, so none can be relied on yet. If you have a source that opens, please send it.",
+  "sources": [
+    "https://example.com/sources/delhi-air-quality-monday-morning",
+    "https://example.com/sources/delhi-schools-notice",
+    "https://example.org/posts/noida-parents-group",
+    "https://example.com/sources/delhi-emergency-rules",
+    "https://example.com/sources/delhi-schools-clarification"
+  ]
+}

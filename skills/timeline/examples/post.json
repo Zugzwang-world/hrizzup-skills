@@ -1,0 +1,13 @@
+{
+  "storyId": "01a199e9-d180-75ec-8a81-134dd403419a",
+  "kind": "text",
+  "format": "timeline",
+  "body": "Delhi NCR's smog, so far (times in IST, oldest first):\n\n2 Nov, 07:00 IST: Air quality across Delhi NCR falls to 'severe' as readings pass 450. [1]\n2 Nov, 11:35 IST: Schools across Delhi NCR move classes online until Friday. (Corrected on 3 Nov: only Delhi's primary schools moved online.) [2, 3]\n2 Nov, 15:10 IST: Building work stops and diesel trucks are kept out of Delhi under the emergency rules; offices are asked to let staff work from home where they can. [4]\n3 Nov, 09:20 IST: CORRECTION of the 2 Nov, 11:35 IST update: only Delhi's primary schools moved online; schools in Noida and Gurugram stay open. [5]\n\nNot confirmed: how long Delhi's primary schools stay online. The 2 Nov update said until Friday; the correction doesn't repeat it.",
+  "sources": [
+    "https://example.com/sources/delhi-air-quality-monday-morning",
+    "https://example.com/sources/delhi-schools-notice",
+    "https://example.org/posts/noida-parents-group",
+    "https://example.com/sources/delhi-emergency-rules",
+    "https://example.com/sources/delhi-schools-clarification"
+  ]
+}
