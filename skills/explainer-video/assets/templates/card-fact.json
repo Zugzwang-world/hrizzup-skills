@@ -1,0 +1,12 @@
+{
+  "id": "card-fact",
+  "sizes": [[1080, 1920]],
+  "background": "paper",
+  "picture": null,
+  "texts": [
+    {"slot": "label", "box": [0.08, 0.19, 0.92, 0.25], "font": "text-bold", "max": 44, "min": 26, "lines": 1, "align": "left", "on": "paper", "case": "upper", "valign": "bottom"},
+    {"slot": "value", "box": [0.06, 0.27, 0.94, 0.5], "font": "display", "max": 360, "min": 120, "lines": 1, "align": "center", "on": "paper", "case": "as-is", "valign": "middle"},
+    {"slot": "text", "box": [0.08, 0.52, 0.92, 0.77], "font": "text-bold", "max": 56, "min": 32, "lines": 5, "align": "left", "on": "paper", "case": "as-is", "valign": "top"}
+  ],
+  "signature": null
+}

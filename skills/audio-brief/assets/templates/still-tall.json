@@ -1,0 +1,11 @@
+{
+  "id": "still-tall",
+  "sizes": [[1080, 1920]],
+  "background": "paper",
+  "picture": {"box": [0.07, 0.06, 0.93, 0.5], "required": false},
+  "texts": [
+    {"slot": "title", "box": [0.07, 0.535, 0.93, 0.78], "font": "display", "max": 170, "min": 64, "lines": 4, "align": "left", "on": "paper", "case": "upper", "valign": "top"},
+    {"slot": "subtitle", "box": [0.07, 0.79, 0.93, 0.915], "font": "text-bold", "max": 54, "min": 30, "lines": 3, "align": "left", "on": "paper", "case": "as-is", "valign": "top"}
+  ],
+  "signature": {"box": [0.07, 0.935, 0.93, 0.975], "align": "right"}
+}

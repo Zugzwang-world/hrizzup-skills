@@ -1,0 +1,14 @@
+{
+  "id": "card-list",
+  "sizes": [[1080, 1920]],
+  "background": "paper",
+  "picture": null,
+  "texts": [
+    {"slot": "title", "box": [0.08, 0.14, 0.92, 0.27], "font": "display", "max": 130, "min": 60, "lines": 2, "align": "left", "on": "paper", "case": "upper", "valign": "top"},
+    {"slot": "item1", "box": [0.08, 0.3, 0.92, 0.4], "font": "text-bold", "max": 54, "min": 32, "lines": 2, "align": "left", "on": "paper", "case": "as-is", "valign": "top"},
+    {"slot": "item2", "box": [0.08, 0.42, 0.92, 0.52], "font": "text-bold", "max": 54, "min": 32, "lines": 2, "align": "left", "on": "paper", "case": "as-is", "valign": "top"},
+    {"slot": "item3", "box": [0.08, 0.54, 0.92, 0.64], "font": "text-bold", "max": 54, "min": 32, "lines": 2, "align": "left", "on": "paper", "case": "as-is", "valign": "top"},
+    {"slot": "item4", "box": [0.08, 0.66, 0.92, 0.76], "font": "text-bold", "max": 54, "min": 32, "lines": 2, "align": "left", "on": "paper", "case": "as-is", "valign": "top"}
+  ],
+  "signature": null
+}

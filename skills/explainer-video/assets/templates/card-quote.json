@@ -1,0 +1,11 @@
+{
+  "id": "card-quote",
+  "sizes": [[1080, 1920]],
+  "background": "accent",
+  "picture": null,
+  "texts": [
+    {"slot": "quote", "box": [0.08, 0.18, 0.92, 0.62], "font": "text-bold", "max": 84, "min": 40, "lines": 7, "align": "left", "on": "accent", "case": "as-is", "valign": "bottom"},
+    {"slot": "by", "box": [0.08, 0.64, 0.92, 0.72], "font": "text", "max": 40, "min": 24, "lines": 2, "align": "left", "on": "accent", "case": "as-is", "valign": "top"}
+  ],
+  "signature": null
+}

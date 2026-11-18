@@ -267,10 +267,12 @@ HELP_TIMEOUT_SECONDS = 30
 # words in the row's name (design 5, "Native extras").
 NATIVE_NOTICES = {
     "imageio-ffmpeg": ("ffmpeg binary",),
-    "av": ("ffmpeg libraries",),
+    "av": ("ffmpeg libraries", "x264 and x265", "codec and system libraries"),  # av's wheel also carries the codecs it is built with
     "espeakng-loader": ("espeak-ng",),
     "kokoro-onnx": ("kokoro-82m",),
     "faster-whisper": ("whisper base.en",),
+    "ctranslate2": ("libgomp",),  # the Linux wheel carries the OpenMP runtime
+    "onnxruntime": ("libraries compiled",),  # the wheel's ThirdPartyNotices.txt lists what is compiled in
     # numpy's wheel carries a linear-algebra build and the compiler's runtime libraries; matplotlib's carries its own fonts
     # (licence files in numpy's dist-info and in matplotlib's mpl-data/fonts/ttf, read 18 November 2026).
     "numpy": ("openblas", "lapack", "gcc runtime", "libquadmath"),

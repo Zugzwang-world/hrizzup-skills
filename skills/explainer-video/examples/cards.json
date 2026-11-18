@@ -1,0 +1,9 @@
+{"cards": [
+  {"kind": "title", "kicker": "Delhi NCR", "title": "The air turns severe", "subtitle": "An illustrative one-minute explainer"},
+  {"kind": "fact", "label": "Air quality (AQI)", "value": "450+", "text": "Readings in Delhi, Noida and Gurugram passed 450 before dawn on Monday, the worst of the season so far."},
+  {"kind": "quote", "quote": "Doctors advise people with breathing problems to stay indoors.", "by": "From the update of 2 Nov"},
+  {"kind": "list", "title": "The emergency rules", "items": ["Building work stops", "Diesel trucks kept out of Delhi", "Offices asked to let staff work from home where they can"]},
+  {"kind": "fact", "label": "Monday's update", "value": "Until Friday", "text": "Schools across Delhi NCR move classes online."},
+  {"kind": "quote", "quote": "How long Delhi's primary schools stay online.", "by": "What isn't confirmed"},
+  {"kind": "sources", "items": ["example.com: delhi-air-quality-monday-morning", "example.com: delhi-emergency-rules", "example.com: delhi-schools-notice", "example.com: delhi-schools-clarification"]}
+]}

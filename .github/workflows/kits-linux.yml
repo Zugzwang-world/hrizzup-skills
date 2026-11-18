@@ -1,7 +1,8 @@
-# Hrizzup skills: the three image kits on a Linux machine (docs/design.md, 7.4). Started by hand from the
-# Actions tab (or `gh workflow run kits-linux.yml`), and never one of the checks the "main" ruleset requires.
+# Hrizzup skills: the kits on a Linux machine (docs/design.md, 7.4). Started by hand from the Actions tab (or
+# `gh workflow run kits-linux.yml`), and never one of the checks the "main" ruleset requires. Two jobs, side by side: the image
+# kits, and the voice and video kits (the second one at the end of this file).
 #
-# It runs the timeline card, the meme and the infographic on the samples' own inputs, twice: once with
+# The first job runs the timeline card, the meme and the infographic on the samples' own inputs, twice: once with
 # `uv run --locked` (the lock beside each script) and once with plain pip from each script's hashed
 # requirements file in a fresh virtual environment. Every picture is read back with the repository's own
 # media reader, and kept as an artifact. The work is in tools/kits_run.py, which also runs on a Mac; its pip way also
@@ -57,5 +58,49 @@ jobs:
         with:
           name: kits-linux
           path: out
+          if-no-files-found: error
+          retention-days: 14
+
+  voice:
+    name: Voice and video kits
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv (a release of astral-sh/setup-uv at least 3 days old, uv itself pinned)
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.1"
+          enable-cache: false
+
+      - name: Install Python 3.12 with uv
+        run: uv python install 3.12
+
+      # The Audio brief's sample script is spoken and given its still, and a short explainer (about ten seconds, from a small script,
+      # two cards and a two-scene plan the harness writes) is spoken, captioned, drawn and cut: with uv's lock and with plain pip from
+      # the hashed requirements. The two models (about 275 MiB) are downloaded into a temporary folder that is not kept.
+      - name: Run the voice and video kits on the Audio brief and a short explainer, with uv and with plain pip, and check every output
+        run: python3 tools/kits_run.py --group voice --out out-voice --mode both --python 3.12
+
+      - name: Run the tests that need a picture, a video or FFmpeg, with the kits' packages installed
+        if: always()
+        run: |
+          uv run --no-project --python 3.12 \
+            --with-requirements skills/explainer-video/scripts/edit.requirements.txt \
+            python -m unittest discover -s tools -p 'test_edit.py'
+          uv run --no-project --python 3.12 \
+            --with-requirements skills/explainer-video/scripts/edit.requirements.txt \
+            python -m unittest discover -s tools -p 'test_media.py'
+
+      - name: Keep the outputs and the summary
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: kits-linux-voice
+          path: out-voice
           if-no-files-found: error
           retention-days: 14

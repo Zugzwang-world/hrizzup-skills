@@ -1,0 +1,88 @@
+{
+  "sampleRate": 24000,
+  "paragraphs": [
+    {
+      "index": 0,
+      "start": 0.3,
+      "end": 6.53,
+      "shown": "This is an illustrative sample made from Hrizzup's example story. Delhi's air has turned severe.",
+      "words": 15
+    },
+    {
+      "index": 1,
+      "start": 7.13,
+      "end": 19.662,
+      "shown": "Before dawn on Monday, AQI readings in Delhi, Noida and Gurugram passed 450, the worst of the season so far. Doctors advise people with breathing problems to stay indoors.",
+      "words": 29
+    },
+    {
+      "index": 2,
+      "start": 20.262,
+      "end": 27.995,
+      "shown": "The emergency rules stop building work, keep diesel trucks out of Delhi, and ask offices to let staff work from home where they can.",
+      "words": 24
+    },
+    {
+      "index": 3,
+      "start": 28.595,
+      "end": 43.608,
+      "shown": "Schools changed twice. On Monday, an update said schools across Delhi NCR had moved online until Friday. On Tuesday, a correction said only Delhi's primary schools have. Schools in Noida and Gurugram remain open.",
+      "words": 34
+    },
+    {
+      "index": 4,
+      "start": 44.208,
+      "end": 50.064,
+      "shown": "What isn't confirmed is how long Delhi's primary schools stay online. The correction doesn't say.",
+      "words": 15
+    },
+    {
+      "index": 5,
+      "start": 50.664,
+      "end": 52.279,
+      "shown": "Sources are in the post.",
+      "words": 5
+    }
+  ],
+  "chunks": [
+    {
+      "paragraph": 0,
+      "start": 0.3,
+      "end": 6.53,
+      "spoken": "This is an illustrative sample made from Hrizz-up's example story. Delhi's air has turned severe."
+    },
+    {
+      "paragraph": 1,
+      "start": 7.13,
+      "end": 19.662,
+      "spoken": "Before dawn on Monday, AQI readings in Delhi, Noida and Goo-roo-gram passed 450, the worst of the season so far. Doctors advise people with breathing problems to stay indoors."
+    },
+    {
+      "paragraph": 2,
+      "start": 20.262,
+      "end": 27.995,
+      "spoken": "The emergency rules stop building work, keep diesel trucks out of Delhi, and ask offices to let staff work from home where they can."
+    },
+    {
+      "paragraph": 3,
+      "start": 28.595,
+      "end": 43.608,
+      "spoken": "Schools changed twice. On Monday, an update said schools across Delhi NCR had moved online until Friday. On Tuesday, a correction said only Delhi's primary schools have. Schools in Noida and Goo-roo-gram remain open."
+    },
+    {
+      "paragraph": 4,
+      "start": 44.208,
+      "end": 50.064,
+      "spoken": "What isn't confirmed is how long Delhi's primary schools stay online. The correction doesn't say."
+    },
+    {
+      "paragraph": 5,
+      "start": 50.664,
+      "end": 52.279,
+      "spoken": "Sources are in the post."
+    }
+  ],
+  "voice": "af_heart",
+  "speed": 1.0,
+  "seconds": 52.8
+}
