@@ -22,6 +22,25 @@ import catalogue  # noqa: E402
 import kits_run  # noqa: E402
 import test_media as built  # noqa: E402
 
+EXPLAINER_SCRIPTS = os.path.join(ROOT, "skills", "explainer-video", "scripts")
+SHARED_SCRIPTS = os.path.join(ROOT, "shared", "scripts")
+for _folder in (EXPLAINER_SCRIPTS, SHARED_SCRIPTS):
+    if _folder not in sys.path:
+        sys.path.insert(0, _folder)
+import importlib.util  # noqa: E402
+
+
+def _load(name, folder):
+    spec = importlib.util.spec_from_file_location(name + "_kits_run_test", os.path.join(folder, name + ".py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+edit = _load("edit", EXPLAINER_SCRIPTS)
+cards = _load("cards", EXPLAINER_SCRIPTS)
+import hrizzup_script  # noqa: E402
+
 WORKFLOW = os.path.join(ROOT, ".github", "workflows", "kits-linux.yml")
 
 
@@ -67,7 +86,8 @@ class Commands(unittest.TestCase):
             rows = [line for line in f.read().split("\n") if line.startswith("| libimagequant")]
         self.assertEqual(len(rows), 1)
         self.assertIn('scope "optional"', rows[0])
-        self.assertIn("not built into the macOS arm64 wheel", rows[0])
+        self.assertIn("absent from Pillow's macOS arm64 and Linux x86-64 wheels", rows[0])
+        self.assertIn("44312350592", rows[0])  # the Linux run that printed it
         self.assertIn("check_feature('libimagequant')", rows[0])
         self.assertIn("tools/kits_run.py", rows[0])
         self.assertIn("No kit calls `quantize`", rows[0])
@@ -112,6 +132,122 @@ class Checking(unittest.TestCase):
         self.assertTrue(any("budget" in p for p in problems))
 
 
+class VoiceGroup(unittest.TestCase):
+    """The voice and video group's commands, inputs and checks (the runs themselves need uv, the network and the models)."""
+
+    def steps(self, work="/w"):
+        return dict(kits_run.voice_steps(work))
+
+    def test_every_command_names_a_script_with_its_lock_and_hashed_requirements_in_its_skills_folder(self):
+        steps = self.steps()
+        self.assertEqual(sorted(steps), ["audio-brief", "explainer-video"])
+        self.assertEqual([s[1] for s in steps["audio-brief"]], ["voice.py", "still.py"])
+        self.assertEqual([s[1] for s in steps["explainer-video"]], ["voice.py", "captions.py", "cards.py", "edit.py", "still.py"])
+        for skill, found in steps.items():
+            folder = os.path.join(ROOT, "skills", skill, "scripts")
+            for _label, script, _arguments, _outputs in found:
+                for name in (script, script + ".lock", script[:-3] + ".requirements.txt"):
+                    self.assertTrue(os.path.isfile(os.path.join(folder, name)), (skill, name))
+
+    def test_the_audio_briefs_own_sample_inputs_exist_and_every_other_path_is_under_the_output_folder(self):
+        steps = self.steps("/w")
+        folder = os.path.join(ROOT, "skills", "audio-brief")
+        for _label, _script, arguments, _outputs in steps["audio-brief"]:
+            for flag, value in zip(arguments, arguments[1:]):
+                if flag in ("--script", "--style"):
+                    self.assertTrue(os.path.isfile(os.path.join(folder, value)), value)  # relative: the sample's own input
+                if flag in ("--out", "--timings"):
+                    self.assertTrue(value.startswith("/w/audio-brief/"), value)
+        for _label, _script, arguments, outputs in steps["explainer-video"]:
+            for flag, value in zip(arguments, arguments[1:]):
+                if flag in ("--script", "--style", "--out", "--timings", "--audio", "--captions", "--plan", "--narration", "--cards", "--out-dir"):
+                    self.assertTrue(value.startswith("/w/explainer-video/"), (flag, value))
+            for path, role in outputs:
+                self.assertTrue(path.startswith("/w/") and role in ("audio", "image", "video"), path)
+
+    def test_each_step_feeds_the_next_in_order(self):
+        written = set()
+        for skill, found in kits_run.voice_steps("/w"):
+            written = set()
+            for _label, script, arguments, outputs in found:
+                for flag, value in zip(arguments, arguments[1:]):
+                    if flag in ("--audio", "--narration", "--captions", "--timings") and skill == "explainer-video" and script != "voice.py":
+                        self.assertIn(value, written, (script, flag))  # an input made by an earlier step
+                written.update(v for f, v in zip(arguments, arguments[1:]) if f in ("--out", "--timings", "--srt"))
+
+    def test_the_short_explainers_inputs_are_valid_for_the_real_commands(self):
+        with tempfile.TemporaryDirectory() as folder:
+            kits_run.write_short_inputs(folder)
+            self.assertEqual(sorted(os.listdir(folder)), ["cards.json", "plan.json", "script.txt", "style.json"])
+            with open(os.path.join(folder, "script.txt"), encoding="utf-8") as f:
+                script = hrizzup_script.parse(f.read())
+            self.assertEqual(len(script.paragraphs), 2)
+            self.assertTrue(15 <= len(script.shown_text().split()) <= 30)  # a few seconds of speech: about ten with the pauses
+            found = cards.read_cards(os.path.join(folder, "cards.json"))
+            self.assertEqual([f[0] for f in found], ["01-title", "02-fact"])  # the names the plan uses
+            os.makedirs(os.path.join(folder, "cards"))
+            for stem, _kind, _texts in found:
+                with open(os.path.join(folder, "cards", stem + ".png"), "wb") as f:
+                    f.write(built.png(1080, 1920))
+            plan = edit.read_plan(os.path.join(folder, "plan.json"))
+            self.assertEqual([os.path.basename(s["path"]) for s in plan["scenes"]], ["01-title.png", "02-fact.png"])
+            counts, _starts, total = edit.schedule(plan["scenes"], 9.5)  # about what the narration lasts
+            self.assertEqual(sum(counts), total)
+
+    def test_every_output_is_checked_against_hrizzups_limits_and_what_the_sample_is_for(self):
+        media = kits_run.load_media()
+        with tempfile.TemporaryDirectory() as folder:
+            def make(name, data):
+                path = os.path.join(folder, name)
+                with open(path, "wb") as f:
+                    f.write(data)
+                return path
+
+            def m4a(seconds):
+                return synthetic_m4a(seconds)
+
+            good = make("a.m4a", m4a(61.1))
+            self.assertEqual(kits_run.check_voice_output(media, good, "audio", "audio-brief", "narration")[1], [])
+            self.assertTrue(kits_run.check_voice_output(media, make("short.m4a", m4a(20.0)), "audio", "audio-brief", "narration")[1])  # not a minute
+            self.assertEqual(kits_run.check_voice_output(media, make("s.m4a", m4a(10.0)), "audio", "explainer-video", "narration")[1], [])
+            self.assertTrue(kits_run.check_voice_output(media, make("l.m4a", m4a(40.0)), "audio", "explainer-video", "narration")[1])
+            video = make("v.mp4", built.ftyp() + built.video_moov(9800) + built.mdat())
+            self.assertEqual(kits_run.check_voice_output(media, video, "video", "explainer-video", "video")[1], [])
+            self.assertTrue(kits_run.check_voice_output(media, make("long.mp4", built.ftyp() + built.video_moov(59000) + built.mdat()), "video", "explainer-video", "video")[1])
+            self.assertEqual(kits_run.check_voice_output(media, make("sq.png", built.png(1080, 1080)), "image", "audio-brief", "still")[1], [])
+            self.assertTrue(kits_run.check_voice_output(media, make("tall.png", built.png(1080, 1920)), "image", "audio-brief", "still")[1])
+            self.assertEqual(kits_run.check_voice_output(media, make("c.png", built.png(1080, 1920)), "image", "explainer-video", "its cards")[1], [])
+            info, found = kits_run.check_voice_output(media, make("bad.png", b"not a picture"), "image", "explainer-video", "its cards")
+            self.assertIsNone(info)
+            self.assertTrue(found)
+
+    def test_a_skills_requirements_are_its_commands_each_once_in_order(self):
+        steps = self.steps()
+        self.assertEqual(kits_run.skill_requirements("audio-brief", steps["audio-brief"]),
+                         [os.path.join("scripts", "voice.requirements.txt"), os.path.join("scripts", "still.requirements.txt")])
+        names = [os.path.basename(n) for n in kits_run.skill_requirements("explainer-video", steps["explainer-video"])]
+        self.assertEqual(names, ["voice.requirements.txt", "captions.requirements.txt", "cards.requirements.txt", "edit.requirements.txt", "still.requirements.txt"])
+
+    def test_a_commands_last_line_is_read_as_json_or_not_at_all(self):
+        self.assertEqual(kits_run.last_json("log\nmore log\n{\"ok\": true}\n"), {"ok": True})
+        self.assertIsNone(kits_run.last_json("log\nTraceback...\nValueError: no"))
+        self.assertIsNone(kits_run.last_json(""))
+        self.assertIsNone(kits_run.last_json("[1, 2]"))
+
+    def test_the_parser_offers_both_groups_and_defaults_to_the_images(self):
+        parser = kits_run.make_parser()
+        self.assertEqual(parser.parse_args(["--out", "x"]).group, "images")
+        self.assertEqual(parser.parse_args(["--out", "x", "--group", "voice"]).group, "voice")
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            parser.parse_args(["--out", "x", "--group", "video"])
+
+
+def synthetic_m4a(seconds):
+    """A synthetic .m4a with real boxes and a duration (nothing plays it)."""
+    moov = built.box(b"moov", built.mvhd(1000, int(seconds * 1000)) + built.trak(b"soun", b"mp4a"))
+    return built.ftyp(b"M4A ") + moov + built.mdat()
+
+
 class Workflow(unittest.TestCase):
     def test_it_is_started_by_hand_and_nothing_else(self):
         text = workflow_text()
@@ -131,9 +267,10 @@ class Workflow(unittest.TestCase):
     def test_the_actions_are_pinned_and_uv_itself_is_pinned(self):
         uses = catalogue.workflow_actions(workflow_text())
         names = sorted(u.split("@")[0] for u in uses)
-        self.assertEqual(names, ["actions/checkout", "actions/upload-artifact", "astral-sh/setup-uv"])
+        self.assertEqual(names, ["actions/checkout"] * 2 + ["actions/upload-artifact"] * 2 + ["astral-sh/setup-uv"] * 2)  # each job uses each once
+        self.assertEqual(len(set(uses)), 3)  # at the same commits in both jobs
         self.assertTrue(all(re.fullmatch(r"[\w./-]+@[0-9a-f]{40}", u) for u in uses))
-        self.assertIn('version: "0.13.1"', workflow_text())
+        self.assertEqual(workflow_text().count('version: "0.13.1"'), 2)  # uv itself pinned in both jobs
         # the same checkout commit as the checks'
         with open(os.path.join(ROOT, ".github", "workflows", "checks.yml"), encoding="utf-8") as f:
             checkout = [u for u in catalogue.workflow_actions(f.read()) if u.startswith("actions/checkout")][0]
@@ -174,12 +311,37 @@ class Workflow(unittest.TestCase):
         for needed in ("pillow", "fonttools", "matplotlib", "numpy"):  # what the real-drawing tests import
             self.assertIn(needed, big)
 
+    def test_the_second_job_runs_the_voice_and_video_kits_and_keeps_only_the_outputs(self):
+        text = workflow_text()
+        job = text[text.index("\n  voice:\n"):]
+        self.assertIn("name: Voice and video kits", job)
+        self.assertIn("timeout-minutes: 60", job)
+        self.assertIn("python3 tools/kits_run.py --group voice --out out-voice --mode both --python 3.12", job)
+        self.assertIn("path: out-voice", job)  # the models are downloaded elsewhere (a temporary folder) and never kept
+        self.assertIn("name: kits-linux-voice", job)
+        self.assertIn("if-no-files-found: error", job)
+        self.assertLess(job.index("kits_run.py"), job.index("unittest discover"))
+        self.assertLess(job.index("unittest discover"), job.index("upload-artifact"))
+        for tests in ("test_edit.py", "test_media.py"):
+            self.assertIn("-p '%s'" % tests, job)
+        self.assertIn("--with-requirements skills/explainer-video/scripts/edit.requirements.txt", job)
+        # a failed run still keeps what it made, and still runs the tests
+        self.assertEqual(job.count("if: always()"), 2)
+
+    def test_the_two_jobs_are_independent_and_both_run_on_githubs_machines(self):
+        text = workflow_text()
+        self.assertEqual(len(re.findall(r"^  [a-z]+:\n    name:", text, re.M)), 2)
+        self.assertEqual(text.count("runs-on: ubuntu-24.04"), 2)
+        self.assertNotIn("needs:", text)  # one failing doesn't stop the other
+        self.assertEqual(catalogue.triggers(text), {"workflow_dispatch"})
+
     def test_it_is_not_a_required_check(self):
         checks = os.path.join(ROOT, ".github", "workflows", "checks.yml")
         with open(checks, encoding="utf-8") as f:
             text = f.read()
         self.assertNotIn("Kits on Linux", text)
         self.assertNotIn("Image kits", text)
+        self.assertNotIn("Voice and video kits", text)
 
 
 if __name__ == "__main__":

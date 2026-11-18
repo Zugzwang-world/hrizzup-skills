@@ -105,8 +105,9 @@ EXAMPLE_HOSTS = ("example.com", "example.org", "example.net")  # reserved for ex
 EXAMPLE_MACHINE = "a Mac with Apple silicon"
 RULES_TEXT = (
     "Hrizzup basics, your locked skill file, applies to everything you make with this skill and "
-    "wins over it. In particular: attach your sources; say what's unconfirmed; describe every "
-    "image you upload; give every video and audio its full transcript and a still image."
+    "wins over it. In particular: attach sources to what you post; say when something is unconfirmed; "
+    "describe every image, and transcribe every video and every audio clip. Hrizzup's format guide "
+    "also asks for a still image with every video and audio."
 )
 AGENT_INTRO_TEXT = (
     "A starter agent from Hrizzup's marketplace. To start from it, save each section below as "
@@ -266,10 +267,14 @@ HELP_TIMEOUT_SECONDS = 30
 # words in the row's name (design 5, "Native extras").
 NATIVE_NOTICES = {
     "imageio-ffmpeg": ("ffmpeg binary",),
-    "av": ("ffmpeg libraries",),
+    "av": ("ffmpeg libraries", "x264 and x265", "codec and system libraries"),  # av's wheel also carries the codecs it is built with
     "espeakng-loader": ("espeak-ng",),
     "kokoro-onnx": ("kokoro-82m",),
     "faster-whisper": ("whisper base.en",),
+    # the Linux wheel carries the OpenMP runtime, and libctranslate2 has oneMKL, oneDNN, spdlog and the CUDA runtime compiled in (the
+    # macOS one, Ruy and spdlog)
+    "ctranslate2": ("libgomp", "compiled ctranslate2"),
+    "onnxruntime": ("compiled onnxruntime",),  # the wheel's ThirdPartyNotices.txt lists what is compiled in
     # numpy's wheel carries a linear-algebra build and the compiler's runtime libraries; matplotlib's carries its own fonts
     # (licence files in numpy's dist-info and in matplotlib's mpl-data/fonts/ttf, read 18 November 2026).
     "numpy": ("openblas", "lapack", "gcc runtime", "libquadmath"),

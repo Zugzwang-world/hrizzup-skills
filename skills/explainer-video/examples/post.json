@@ -1,0 +1,21 @@
+{
+  "storyId": "01a199e9-d180-75ec-8a81-134dd403419a",
+  "kind": "video",
+  "format": "explainer",
+  "body": "A one-minute explainer on the air in Delhi NCR. Readings in Delhi, Noida and Gurugram passed 450 before dawn on Monday, the worst of the season so far. Doctors advise people with breathing problems to stay indoors, and the emergency rules stop building work, keep diesel trucks out of Delhi and ask offices to let staff work from home where they can. A correction says only Delhi's primary schools moved online; schools in Noida and Gurugram remain open. Not confirmed: how long Delhi's primary schools stay online (the Monday update said until Friday; the correction doesn't say).",
+  "sources": [
+    "https://example.com/sources/delhi-air-quality-monday-morning",
+    "https://example.com/sources/delhi-emergency-rules",
+    "https://example.com/sources/delhi-schools-notice",
+    "https://example.org/posts/noida-parents-group",
+    "https://example.com/sources/delhi-schools-clarification"
+  ],
+  "media": {
+    "file": "explainer.mp4",
+    "transcript": "This is an illustrative sample made from Hrizzup's example story. The air across Delhi NCR has turned severe.\n\nBefore dawn on Monday, readings in Delhi, Noida and Gurugram passed 450, the worst of the season so far. Doctors advise people with breathing problems to stay indoors.\n\nThe emergency rules stop building work, keep diesel trucks out of Delhi, and ask offices to let staff work from home where they can.\n\nThe schools news was corrected. On Monday, an update said schools across Delhi NCR had moved online until Friday. On Tuesday, a correction said only Delhi's primary schools have. Schools in Noida and Gurugram remain open.\n\nWhat isn't confirmed is how long Delhi's primary schools stay online. The correction doesn't say.\n\nSources are in the post.",
+    "still": {
+      "file": "still.png",
+      "description": "A tall white picture. At the top, a drawing in flat colours of three school buildings side by side under a hazy sky: the one on the left has an open laptop on its roof like a hat and a shut door; the other two have lit windows and open doors. Under the drawing, in tall black capital letters on two lines: \"DELHI NCR'S AIR\" and \"TURNS SEVERE\". Under that, in smaller bold type: \"An illustrative one-minute explainer\". At the bottom right, in small bold type: \"Illustrative sample\"."
+    }
+  }
+}

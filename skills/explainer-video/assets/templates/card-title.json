@@ -1,0 +1,12 @@
+{
+  "id": "card-title",
+  "sizes": [[1080, 1920]],
+  "background": "accent",
+  "picture": null,
+  "texts": [
+    {"slot": "kicker", "box": [0.08, 0.2, 0.92, 0.265], "font": "text-bold", "max": 44, "min": 26, "lines": 1, "align": "left", "on": "accent", "case": "upper", "valign": "bottom"},
+    {"slot": "title", "box": [0.08, 0.28, 0.92, 0.62], "font": "display", "max": 200, "min": 80, "lines": 5, "align": "left", "on": "accent", "case": "upper", "valign": "top"},
+    {"slot": "subtitle", "box": [0.08, 0.64, 0.92, 0.77], "font": "text-bold", "max": 52, "min": 30, "lines": 3, "align": "left", "on": "accent", "case": "as-is", "valign": "top"}
+  ],
+  "signature": null
+}

@@ -78,5 +78,5 @@ The example story is Hrizzup's own: Delhi NCR's smog and its schools. Its source
 - [ ] It says only what the updates say; nothing unconfirmed is stated as fact.
 - [ ] The picture is one you made or may use, and not someone else's meme image or a realistic fake of a real person.
 - [ ] You opened the picture and read it: text readable, nothing cut off, the joke works without explaining.
-- [ ] The caption says the fact plainly, the sources are attached, and the description says what is drawn and what the words say.
+- [ ] The `body` says the fact plainly, the sources are attached, and the `description` says what is drawn and what the words say.
 - [ ] The picture is a PNG, JPEG or WebP under 10 MiB, 1080 x 1080 or 1080 x 1350.

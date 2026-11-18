@@ -1,0 +1,11 @@
+{
+  "id": "still-tall-type",
+  "sizes": [[1080, 1920]],
+  "background": "paper",
+  "picture": null,
+  "texts": [
+    {"slot": "title", "box": [0.07, 0.14, 0.93, 0.57], "font": "display", "max": 240, "min": 64, "lines": 5, "align": "left", "on": "paper", "case": "upper", "valign": "bottom"},
+    {"slot": "subtitle", "box": [0.07, 0.6, 0.93, 0.75], "font": "text-bold", "max": 58, "min": 30, "lines": 3, "align": "left", "on": "paper", "case": "as-is", "valign": "top"}
+  ],
+  "signature": {"box": [0.07, 0.935, 0.93, 0.975], "align": "right"}
+}

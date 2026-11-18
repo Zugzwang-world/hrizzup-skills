@@ -1,0 +1,21 @@
+{
+  "storyId": "01a199e9-d180-75ec-8a81-134dd403419a",
+  "kind": "audio",
+  "format": "audio-brief",
+  "body": "A one-minute audio brief on the air in Delhi NCR. Readings in Delhi, Noida and Gurugram crossed 450 before dawn on Monday, the worst of the season so far. Under the emergency rules, building work has stopped and diesel trucks are kept out of Delhi. Doctors advise people with breathing problems to stay indoors. A correction says only Delhi's primary schools moved online; schools in Noida and Gurugram remain open. Not confirmed: how long Delhi's primary schools stay online (the Monday update said until Friday; the correction doesn't repeat it).",
+  "sources": [
+    "https://example.com/sources/delhi-air-quality-monday-morning",
+    "https://example.com/sources/delhi-emergency-rules",
+    "https://example.com/sources/delhi-schools-notice",
+    "https://example.org/posts/noida-parents-group",
+    "https://example.com/sources/delhi-schools-clarification"
+  ],
+  "media": {
+    "file": "narration.m4a",
+    "transcript": "This is an illustrative sample made from Hrizzup's example story. The air across Delhi NCR has turned severe.\n\nBefore dawn on Monday, readings in Delhi, Noida and Gurugram crossed 450, the worst of the season so far. Under the emergency rules, building work has stopped and diesel trucks are kept out of Delhi.\n\nWhat does this mean for you? Doctors advise people with breathing problems to stay indoors. The emergency rules also ask offices to let staff work from home where they can.\n\nThe schools news was corrected. On Monday, an update said schools across Delhi NCR had moved online until Friday. On Tuesday, a correction said only Delhi's primary schools have. Schools in Noida and Gurugram remain open.\n\nWhat isn't confirmed is how long Delhi's primary schools stay online. The first update said until Friday, but the correction doesn't repeat it.\n\nSources are in the post.",
+    "still": {
+      "file": "still.png",
+      "description": "A white square with no picture. In large black capital letters on two lines: \"DELHI NCR'S AIR\" and \"TURNS SEVERE\". Under them, in smaller bold type: \"An illustrative one-minute audio brief\". At the bottom right, in small bold type: \"Illustrative sample\"."
+    }
+  }
+}

@@ -19,7 +19,9 @@ Whichever way, run a skill's commands from its folder. A skill's `## What you ne
 <!-- catalogue:start -->
 | Name | Kind | What it does | What it needs | Folder |
 |---|---|---|---|---|
+| Audio brief | Skill | A one-minute spoken summary of a story with its transcript: a script shape, an open-source voice and levelling to Hrizzup's loudness. | A voice tool | [skills/audio-brief](skills/audio-brief) |
 | Breakdown | Skill | A short written take on what's new in a story and why it matters, with what is known, what is not, and the sources. | Nothing | [skills/breakdown](skills/breakdown) |
+| Explainer video | Skill | A one-minute explainer: a script with a scene for each idea, an open-source voice, plain cards, gentle motion, burned-in captions and the transcript, at Hrizzup's video settings. | Video, image and voice tools | [skills/explainer-video](skills/explainer-video) |
 | Infographic | Skill | Charts and visual explainers: one message a graphic, bars from zero, direct labels, the source on the image. Three plain templates and a chart style. | An image tool, or running a little code | [skills/infographic](skills/infographic) |
 | Meme | Skill | An image with a caption on the story's latest turn: four plain templates, Hrizzup's sizes, and a guide to keeping the joke fair. | An image tool | [skills/meme](skills/meme) |
 | Source check | Skill | Lists the links behind every claim, says what was checked about each, and asks for working sources where there are none. | Nothing | [skills/source-check](skills/source-check) |

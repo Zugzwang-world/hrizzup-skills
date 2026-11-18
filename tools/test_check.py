@@ -930,16 +930,22 @@ class Locks(Repo):
 
     def test_native_extras_need_their_own_rows(self):
         packages = {"imageio-ffmpeg": ("0.8.1", [H1]), "av": ("18.1.0", [H2]), "espeakng-loader": ("0.2.4", [H1]),
-                    "kokoro-onnx": ("0.6.1", [H2]), "faster-whisper": ("1.2.1", [H3])}
+                    "kokoro-onnx": ("0.6.1", [H2]), "faster-whisper": ("1.2.1", [H3]), "ctranslate2": ("4.9.0", [H1]),
+                    "onnxruntime": ("1.32.0", [H2])}
         deps = ["%s==%s" % (n, v[0]) for n, v in packages.items()]
         rows = "".join(notice(n, v[0]) for n, v in packages.items())
         self.heavy(packages=packages, deps=deps, notices=rows)
         lines = self.check()
-        for words in ("ffmpeg binary", "ffmpeg libraries", "espeak-ng", "kokoro-82m", "whisper base.en"):
+        for words in ("ffmpeg binary", "ffmpeg libraries", "x264 and x265", "codec and system libraries", "espeak-ng", "kokoro-82m",
+                      "whisper base.en", "libgomp", "compiled ctranslate2", "compiled onnxruntime"):
             self.fails(lines, "NOTICES.md", "notices", '"%s"' % words)
         extras = (notice("FFmpeg binary (imageio-ffmpeg)", "9.0", "GPL-2.0-or-later") + notice("FFmpeg libraries (in av)", "8.1", "LGPL-3.0-or-later")
+                  + notice("x264 and x265 (in av)", "165 and 216", "GPL-2.0-or-later") + notice("Codec and system libraries (in av)", "build", "BSD-3-Clause")
                   + notice("espeak-ng (in espeakng-loader)", "1.52", "GPL-3.0-or-later") + notice("Kokoro-82M weights", "1.0", "Apache-2.0")
-                  + notice("Whisper base.en (CTranslate2)", "revision 3d3d5dee", "MIT"))
+                  + notice("Whisper base.en (CTranslate2)", "revision 3d3d5dee", "MIT")
+                  + notice("libgomp (in ctranslate2)", "build", "GPL-3.0-or-later WITH GCC-exception-3.1")
+                  + notice("Libraries compiled into ctranslate2's wheels", "build", "Apache-2.0")
+                  + notice("Libraries compiled into onnxruntime", "build", "MIT"))
         edit(self.root, "NOTICES.md", NOTICE_HEADER, NOTICE_HEADER + extras)
         self.assertEqual([l for l in self.check() if l.startswith("NOTICES.md")], [])
 

@@ -40,7 +40,7 @@ Write every update. If the story has more than twelve, keep the newest twelve an
 - [ ] Each correction has its own line, and the line it corrects carries a note.
 - [ ] Nothing is in a line that the update doesn't say.
 - [ ] Anything open is on a `Not confirmed:` line.
-- [ ] The post is at most 5,000 characters (a text post), or at most 1,000 if the lines are an image's caption.
+- [ ] The post's `body` is at most 5,000 characters (a text post), or at most 1,000 if the lines go with the card as an image post.
 
 ## Good and bad, from the example story
 
@@ -68,4 +68,4 @@ The example story is Hrizzup's own: Delhi NCR's smog and its schools. Its source
 
 ## The card
 
-The optional card (`scripts/timeline_card.py`) draws the same rows on a 1080 × 1350 picture: the time on the left, the headline on the right, a correction marked with the update it corrects, and the corrected row marked with the time of the correction. It shows the newest six updates and says how many earlier ones are left out. It is a picture of the timeline, not a replacement for the text: always give the dated lines as the post's body (or caption) too, and describe the picture for people who can't see it.
+The optional card (`scripts/timeline_card.py`) draws the same rows on a 1080 × 1350 picture: the time on the left, the headline on the right, a correction marked with the update it corrects, and the corrected row marked with the time of the correction. It shows the newest six updates and says how many earlier ones are left out. It is a picture of the timeline, not a replacement for the text: always give the dated lines as the post's `body` too (at most 1,000 characters with a picture), and describe the picture in its `description` for people who can't see it.
