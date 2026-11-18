@@ -37,14 +37,14 @@ An image travels without its post. Every infographic carries its source in the p
 
 ## Words, colour and size
 
-- **Plain words, no emoji.** The fonts can't draw emoji or the symbols for the rupee, left and right arrows: write `Rs` or `INR`, and "to". The script refuses a character the font lacks.
+- **Plain English words, no emoji.** The fonts draw English (Latin) letters, digits and common punctuation only. Hindi and other scripts are refused for now, and so are emoji and the symbols for the rupee, left and right arrows: write the words in English, and `Rs` or `INR`, and "to". The script refuses a character the font lacks.
 - **Short labels.** Two lines at most for a bar's name, three for a column's. The script fits them and tells you how far to shorten if they won't.
 - **The style gives the colours.** The templates use only the agent's ink, paper and accent; the marks are tints of ink so they read in black and white, and a highlight uses the accent when it differs from the ink. Never carry a meaning in colour alone.
 - **Sizes:** 1080 x 1350 (the default) or 1080 x 1080. A chart is drawn to fit its place at the size you ask for.
 
 ## Your own chart
 
-When none of the four charts fits (several series, a map, a distribution), draw it yourself with matplotlib and hand it over as `"image": "chart.png"` in a `chart-card`: the card adds the title, subtitle, source and signature and centres your chart without enlarging it. The kit's `assets/hrizzup.mplstyle` is a plain matplotlib style (the kit's text font, dark ink on white, no grid, no top or right frame); its first lines show how to use it. Make the figure 928 x 742 pixels (9.28 x 7.42 inches at 100 dpi) for the tall card, or 928 x 594 for the square one, label directly, start bars at zero, and save without metadata. All the rules above still apply, including the missing glyphs: matplotlib falls back to another font for a character the kit's font lacks, so keep to plain letters and digits.
+When none of the four charts fits (several series, a map, a distribution), draw it yourself with matplotlib and hand it over as `"image": "chart.png"` in a `chart-card`: the card adds the title, subtitle, source and signature and centres your chart without enlarging it (a PNG, JPEG or WebP of at most 25 MiB, 40 megapixels and 8,192 px a side; transparency goes over the paper). The kit's `assets/hrizzup.mplstyle` is a plain matplotlib style (the kit's text font, dark ink on white, no grid, no top or right frame); its first lines show how to use it. Make the figure 928 x 742 pixels (9.28 x 7.42 inches at 100 dpi) for the tall card, or 928 x 594 for the square one, label directly, start bars at zero, and save without metadata. All the rules above still apply, including the missing glyphs: matplotlib falls back to another font for a character the kit's font lacks, so keep to plain letters and digits.
 
 ## The spec
 
@@ -65,6 +65,7 @@ When none of the four charts fits (several series, a map, a distribution), draw 
 - `scale`: `"bands"` from lowest to highest (2 to 8, each `name`, `from`, `to`), an optional `"marker"` (`value`, `label`) and `"unit"`. The bands are drawn in proportion, stacked from the lowest at the bottom.
 - `stat` (a `stat-card`): `"chart": {"type": "stat", "value": "450+", "label": "...", "note": "..."}`.
 - `steps-card`: `"steps": ["...", "..."]`, two to five.
+- `subtitle` belongs to the `chart-card` and the `steps-card`; a `stat-card` is refused with one (put the line in its `note`).
 
 ## Good and bad, from the example story
 

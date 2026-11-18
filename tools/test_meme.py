@@ -10,7 +10,9 @@ import json
 import os
 import sys
 import tempfile
+import types
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -92,9 +94,9 @@ class Templates(unittest.TestCase):
             self.assertIn("text", slots, name)
             self.assertEqual("text2" in slots, name != "caption-bar", name)
 
-    def test_the_label_template_needs_a_picture_and_the_rest_do_not(self):
+    def test_the_caption_bar_and_the_label_need_a_picture_and_the_rest_do_not(self):
         required = {name: load(name)["picture"]["required"] for name in meme.TEMPLATE_IDS}
-        self.assertEqual(required, {"caption-bar": False, "top-bottom": False, "two-panel": False, "label": True})
+        self.assertEqual(required, {"caption-bar": True, "top-bottom": False, "two-panel": False, "label": True})
 
     def test_text_over_the_picture_never_reaches_the_signature_strip(self):
         for name in meme.TEMPLATE_IDS:
@@ -136,15 +138,96 @@ class Command(unittest.TestCase):
             with open(path, "rb") as f:
                 self.assertEqual(f.read(), b"not a picture")
 
-    def test_an_unknown_template_is_refused_by_the_parser(self):
-        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-            meme.main(["--template", "poster", "--text", "a", "--out", "m.png"])
+    def test_a_wrong_command_line_is_bad_input_with_the_json_line_not_argparses_own_exit(self):
+        for argv in (["--template", "poster", "--text", "a", "--out", "m.png"], ["--template", "label"], ["--bogus"],
+                     ["--template", "label", "--text", "a", "--out"]):
+            code, report = run_main(argv)
+            self.assertEqual(code, 2, argv)
+            self.assertFalse(report["ok"])
+            self.assertTrue(report["problem"])
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as caught:
+            meme.main(["--help"])  # help still prints and exits 0
+        self.assertEqual(caught.exception.code, 0)
+
+    def test_a_link_to_an_input_is_the_input(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "picture.png")
+            with open(path, "wb") as f:
+                f.write(b"not a picture")
+            for make_link in (os.symlink, os.link):
+                link = os.path.join(folder, "m-%s.png" % make_link.__name__)
+                try:
+                    make_link(path, link)
+                except (OSError, NotImplementedError):
+                    continue
+                code, report = run_main(["--template", "caption-bar", "--text", "a", "--image", path, "--out", link])
+                self.assertEqual((code, "overwrite" in report["problem"]), (2, True), make_link.__name__)
+                style = os.path.join(folder, "style.json")
+                with open(style, "w", encoding="utf-8") as f:
+                    f.write("{}")
+                code, report = run_main(["--template", "caption-bar", "--text", "a", "--image", path, "--style", style, "--out", link])
+                self.assertEqual(code, 2)
+            with open(path, "rb") as f:
+                self.assertEqual(f.read(), b"not a picture")
+
+    def test_whatever_goes_wrong_the_last_line_is_the_json_line(self):
+        fake = types.ModuleType("hrizzup_draw")
+
+        class DrawError(Exception):
+            code = 2
+
+        fake.DrawError = DrawError
+        pil = types.ModuleType("PIL")
+        pil.Image = types.ModuleType("PIL.Image")
+        with tempfile.TemporaryDirectory() as folder:
+            argv = ["--template", "top-bottom", "--text", "a", "--out", os.path.join(folder, "m.png")]
+            for error, code in ((RuntimeError("boom"), 1), (KeyError("slot"), 1), (ImportError("No module named x"), 3)):
+                fake.load_style = mock.Mock(side_effect=error)
+                with mock.patch.dict(sys.modules, {"hrizzup_draw": fake, "PIL": pil, "PIL.Image": pil.Image}):
+                    got, report = run_main(argv)
+                self.assertEqual(got, code, error)
+                self.assertFalse(report["ok"])
+                self.assertEqual(set(report), {"ok", "outputs", "checks", "problem"})
+                self.assertTrue(report["problem"])
+
+    def test_a_template_that_needs_a_picture_exits_2_without_one(self):
+        try:
+            found = importlib.util.spec_from_file_location("hrizzup_draw_meme", os.path.join(SCRIPTS, "hrizzup_draw.py"))
+            own = importlib.util.module_from_spec(found)
+            found.loader.exec_module(own)  # this kit's own copy (Pillow and fontTools are installed here)
+        except ImportError:
+            self.skipTest("needs Pillow and fontTools")
+        with tempfile.TemporaryDirectory() as folder, mock.patch.dict(sys.modules, {"hrizzup_draw": own}):
+            for template in ("caption-bar", "label"):
+                code, report = run_main(["--template", template, "--text", "a"] + (["--text2", "b"] if template == "label" else [])
+                                        + ["--out", os.path.join(folder, "m.png")])
+                self.assertEqual(code, 2, template)
+                self.assertIn("needs a picture", report["problem"])
 
     def test_help_ends_with_an_example_that_names_the_command(self):
         text = meme.make_parser().format_help().strip().split("\n")
         tail = "\n".join(text[-6:]).lower()
         self.assertIn("example", tail)
         self.assertIn("meme.py", tail)
+
+
+class Words(unittest.TestCase):
+    """What the skill's own words promise matches what the command does (M3's review)."""
+
+    def read(self, *parts):
+        with open(os.path.join(ROOT, "skills", "meme", *parts), encoding="utf-8") as f:
+            return f.read()
+
+    def test_the_skill_and_its_guide_say_the_fonts_draw_english_letters_only(self):
+        for text in (self.read("SKILL.md"), self.read("references", "meme-guide.md")):
+            self.assertIn("English (Latin) letters", text)
+            self.assertIn("Hindi", text)
+            self.assertIn("refused for now", text)
+
+    def test_the_skill_file_says_which_templates_need_a_picture(self):
+        table = {line.split("|")[1].strip(" `"): line.split("|")[-2].strip() for line in self.read("SKILL.md").split("\n")
+                 if line.startswith("| `") and line.count("|") == 5 and "template" not in line}
+        self.assertEqual(table, {"caption-bar": "needed", "top-bottom": "optional", "two-panel": "optional", "label": "needed"})
 
 
 if __name__ == "__main__":

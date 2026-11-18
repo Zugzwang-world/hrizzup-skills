@@ -359,22 +359,54 @@ def clean(text, limit):
     return " ".join(kept.split())[:limit]
 
 
+# What find_title looks for, and what ends each of the first three (a comment, a script and a style hold text that
+# is not the page's title, whatever it looks like).
+TITLE_MARKERS = (b"<!--", b"<script", b"<style", b"<title")
+TITLE_SKIPS = {b"<script": b"</script", b"<style": b"</style"}
+
+
 def find_title(body):
-    """The bytes between the first `<title ...>` and `</title` of a page, or None, in one pass: every search
-    moves forward, so even a page that is nothing but `<title>` takes no longer than its length. (The page is
-    lower-cased as bytes, which changes only ASCII letters, so positions in it are positions in the page.)"""
+    """The bytes between the first real `<title ...>` and `</title` of a page, or None. A `<title>` inside an HTML
+    comment (`<!-- ... -->`), a script or a style is not the page's. It is one forward pass: each kind of marker is
+    searched for from where the pass has reached, never twice over the same bytes, so even a page that is nothing
+    but comments or `<title>` takes no longer than its length. (The page is lower-cased as bytes, which changes
+    only ASCII letters, so positions in it are positions in the page.)"""
     lowered = body.lower()
-    start = lowered.find(b"<title")
-    while start != -1:
-        follower = lowered[start + 6:start + 7]
-        if follower and follower in TITLE_TAG_ENDS:
-            opened = lowered.find(b">", start)
-            if opened == -1:
+    position = 0
+    ahead = {marker: lowered.find(marker) for marker in TITLE_MARKERS}  # the next place each marker is, from `position` on
+    while True:
+        for marker in TITLE_MARKERS:
+            if ahead[marker] != -1 and ahead[marker] < position:
+                ahead[marker] = lowered.find(marker, position)
+        found = [(place, marker) for marker, place in ahead.items() if place != -1]
+        if not found:
+            return None
+        start, marker = min(found)
+        if marker == b"<!--":
+            if lowered.startswith(b"<!-->", start) or lowered.startswith(b"<!--->", start):
+                position = start + (5 if lowered.startswith(b"<!-->", start) else 6)  # an empty comment
+                continue
+            end = lowered.find(b"-->", start + 4)
+            if end == -1:
+                return None  # a comment that never closes holds the rest of the page
+            position = end + 3
+            continue
+        after = start + len(marker)
+        follower = lowered[after:after + 1]
+        if not (follower and follower in TITLE_TAG_ENDS):
+            position = after  # "<titles>" or "<scripted>": not that tag
+            continue
+        if marker in TITLE_SKIPS:
+            end = lowered.find(TITLE_SKIPS[marker], after)
+            if end == -1:
                 return None
-            closed = lowered.find(b"</title", opened)
-            return None if closed == -1 else body[opened + 1:closed]
-        start = lowered.find(b"<title", start + 6)
-    return None
+            position = end + len(TITLE_SKIPS[marker])
+            continue
+        opened = lowered.find(b">", start)
+        if opened == -1:
+            return None
+        closed = lowered.find(b"</title", opened)
+        return None if closed == -1 else body[opened + 1:closed]
 
 
 def page_title(headers, body):

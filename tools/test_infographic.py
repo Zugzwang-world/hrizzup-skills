@@ -9,9 +9,12 @@ import copy
 import io
 import json
 import os
+import random
 import sys
 import tempfile
+import types
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -157,6 +160,18 @@ class Spec(unittest.TestCase):
             info.validate_spec(refused(example_spec(), chart=chart(marker={"value": edge, "label": "edge"})))
         info.validate_spec(refused(example_spec(), chart=chart(marker=None)))  # a scale with no marker
 
+    def test_a_stat_card_has_no_subtitle(self):
+        stat = {"template": "stat-card", "title": "T", "source": "S", "chart": {"type": "stat", "value": "450+", "label": "l"}}
+        info.validate_spec(stat)
+        for subtitle in ("A line", "", " "):
+            with self.assertRaises(info.InputError, msg=repr(subtitle)) as caught:
+                info.validate_spec(dict(stat, subtitle=subtitle))
+            self.assertIn("a stat-card has no subtitle: put it in the note", str(caught.exception))
+        # the other two templates keep theirs
+        self.assertEqual(info.validate_spec(dict(BARS, subtitle="Sub"))["subtitle"], "Sub")
+        steps = {"template": "steps-card", "title": "T", "source": "S", "steps": ["a", "b"], "subtitle": "Sub"}
+        self.assertEqual(info.validate_spec(steps)["subtitle"], "Sub")
+
     def test_stat_and_steps_rules(self):
         stat = {"template": "stat-card", "title": "T", "source": "S", "chart": {"type": "stat", "value": "450+", "label": "l", "note": "n"}}
         self.assertEqual(info.validate_spec(stat)["chart"]["note"], "n")
@@ -171,8 +186,14 @@ class Spec(unittest.TestCase):
             with self.assertRaises(info.InputError):
                 info.validate_spec(bad)
 
-    def test_numbers_as_text(self):
-        self.assertEqual([info.fmt_number(v) for v in (450, 450.0, 12.5, 0.1 + 0.2, 1e3, 7.005)], ["450", "450", "12.5", "0.3", "1000", "7"])
+    def test_numbers_as_text_are_never_rounded_further_than_the_source(self):
+        cases = ((450, "450"), (450.0, "450"), (12.5, "12.5"), (1e3, "1000"), (7.005, "7.005"), (0.001, "0.001"), (0.004, "0.004"),
+                 (0.125, "0.125"), (1e-05, "0.00001"), (123456789.123, "123456789.123"), (-2.50, "-2.5"), (0.1 + 0.2, "0.30000000000000004"),
+                 (3, "3"), (-0.0, "0"), (1e21, "1000000000000000000000"), (2.5e-07, "0.00000025"), (100.10, "100.1"))
+        for value, text in cases:
+            self.assertEqual(info.fmt_number(value), text, value)
+        self.assertNotEqual(info.fmt_number(0.001), info.fmt_number(0.004))  # two different values never print the same
+        self.assertNotIn("e", info.fmt_number(1.5e-9))
         self.assertEqual(info.value_text({"value": 12.5, "text": None}, "%"), "12.5%")
         self.assertEqual(info.value_text({"value": 462, "text": None}, "AQI"), "462 AQI")
         self.assertEqual(info.value_text({"value": 462, "text": None}, None), "462")
@@ -256,7 +277,11 @@ class Layout(unittest.TestCase):
         self.assertEqual(layout["named"], [0, 4])
         self.assertTrue(layout["points"][1]["y"] < layout["points"][0]["y"])  # a higher value is higher up
         self.assertTrue(all(0 <= p["y"] <= layout["base"] for p in layout["points"]))
-        self.assertTrue(layout["points"][0]["below"])  # the line rises away from the first point: its label goes below
+        first, last = layout["points"][0]["label_at"], layout["points"][-1]["label_at"]
+        self.assertEqual((first["align"], first["vertical"]), ("right", "center"))  # beside the first point, on its left
+        self.assertEqual((last["align"], last["vertical"]), ("left", "center"))  # and beside the last, on its right
+        self.assertLess(first["x"], layout["points"][0]["x"])
+        self.assertGreater(last["x"], layout["points"][-1]["x"])
         self.assertEqual(layout["shown"][0], 0)
         self.assertEqual(layout["shown"][-1], 4)
 
@@ -330,6 +355,197 @@ class Layout(unittest.TestCase):
         self.assertEqual(base, before)
 
 
+class Colours(unittest.TestCase):
+    """Every lighter shade of ink that is drawn passes WCAG's 4.5 to 1 against the paper."""
+
+    STYLES = (
+        {"ink": "#111111", "paper": "#FFFFFF", "accent": "#111111"},
+        {"ink": "#767676", "paper": "#FFFFFF", "accent": "#767676"},  # the lightest grey that has 4.5 to 1 on white
+        {"ink": "#222222", "paper": "#F5F0E6", "accent": "#B3261E"},
+        {"ink": "#FFFFFF", "paper": "#111111", "accent": "#FFE600"},  # a dark paper
+        {"ink": "#111111", "paper": "#FFFFFF", "accent": "#FFE600"},  # a yellow accent that is unreadable on white
+    )
+
+    def test_the_contrast_formula(self):
+        self.assertAlmostEqual(info.contrast("#000000", "#FFFFFF"), 21.0, places=6)
+        self.assertAlmostEqual(info.contrast("#FFFFFF", "#FFFFFF"), 1.0, places=6)
+        self.assertGreaterEqual(info.contrast("#767676", "#FFFFFF"), 4.5)
+        self.assertLess(info.contrast("#777777", "#FFFFFF"), 4.6)
+        self.assertEqual(info.contrast("#112233", "#FFEEDD"), info.contrast("#FFEEDD", "#112233"))
+
+    def test_a_shade_that_would_not_read_is_darkened_until_it_does(self):
+        paper, ink = "#FFFFFF", "#111111"
+        self.assertLess(info.contrast(info.mix(paper, ink, info.TINT_OTHERS), paper), 4.5)  # the old bars: too light
+        floor = info.readable_share(paper, ink)
+        self.assertGreater(floor, info.TINT_OTHERS)
+        self.assertGreaterEqual(info.contrast(info.mix(paper, ink, floor), paper), 4.5)
+        self.assertLess(info.contrast(info.mix(paper, ink, floor - 0.01), paper), 4.5)  # and no darker than it has to be
+        self.assertEqual(info.shade(paper, ink, info.TINT_OTHERS), info.mix(paper, ink, floor))
+        self.assertEqual(info.shade(paper, ink, 0.9), info.mix(paper, ink, 0.9))  # a dark enough shade is left alone
+
+    def test_when_no_lighter_shade_reads_the_full_ink_is_used(self):
+        for share in (0.0, 0.14, 0.38, 0.75, 0.99):
+            self.assertEqual(info.shade("#FFFFFF", "#767676", share), "#767676", share)  # 4.54 to 1: nothing lighter passes
+
+    def test_every_shade_drawn_in_any_style_has_4_5_to_1(self):
+        for style in self.STYLES:
+            paper, ink = style["paper"], style["ink"]
+            self.assertGreaterEqual(info.contrast(ink, paper), 4.5, style)
+            floor = info.readable_share(paper, ink)
+            shares = [info.tint_for(n, 6, floor) for n in range(6)] + [info.TINT_OTHERS, 0.86, 0.5, 0.7, 0.75]
+            for share in shares:
+                self.assertGreaterEqual(info.contrast(info.shade(paper, ink, share), paper), 4.5, (style, share))
+            ramp = [info.tint_for(n, 6, floor) for n in range(6)]
+            self.assertEqual(ramp, sorted(ramp))  # still light to dark
+            self.assertGreaterEqual(ramp[0], floor - 1e-9)
+
+    def test_the_accent_is_used_only_where_it_reads_on_the_paper(self):
+        self.assertEqual(info.accent_on_paper(self.STYLES[0]), "#111111")
+        self.assertEqual(info.accent_on_paper(self.STYLES[2]), "#B3261E")  # a dark red reads on cream
+        self.assertEqual(info.accent_on_paper(self.STYLES[4]), "#111111")  # yellow on white doesn't: the ink
+        self.assertEqual(info.accent_on_paper(self.STYLES[3]), "#FFE600")  # but yellow on a dark paper does
+
+
+class Marker(unittest.TestCase):
+    """A scale marker's label stays on the chart, or the card is refused."""
+
+    def chart(self, value, label="The example story's reading"):
+        bands = [{"name": n, "from": a, "to": b} for n, a, b in (("Good", 0, 50), ("Satisfactory", 51, 100), ("Moderate", 101, 200),
+                                                                 ("Poor", 201, 300), ("Very Poor", 301, 400), ("Severe", 401, 500))]
+        return {"type": "scale", "bands": bands, "unit": None, "marker": {"value": value, "label": label}}
+
+    def test_a_low_marker_puts_its_label_over_its_value_not_off_the_bottom(self):
+        layout = info.scale_layout(self.chart(45, "Shillong's reading on a clear day"), 928, 742, measure, wrap)
+        marker = layout["marker"]
+        self.assertEqual(marker["label_at"]["vertical"], "bottom")  # above the value
+        tall = len(marker["label_lines"]) * info.MARKER_LABEL * info.LINE
+        top, bottom = marker["label_at"]["y"] - tall, marker["label_at"]["y"]
+        self.assertGreaterEqual(top, 0)
+        self.assertLessEqual(bottom, marker["value_y"] - info.MARKER_VALUE * 0.5)  # clear of the big value
+        self.assertEqual(marker["value"], "45")
+
+    def test_a_high_marker_keeps_its_label_under_the_value(self):
+        marker = info.scale_layout(self.chart(450), 928, 742, measure, wrap)["marker"]
+        self.assertEqual(marker["label_at"]["vertical"], "top")
+        self.assertGreater(marker["label_at"]["y"], marker["value_y"] + info.MARKER_VALUE * 0.5)
+
+    def test_at_every_value_the_label_is_inside_the_chart_and_clear_of_the_value(self):
+        for height in (742, 594):
+            for value in range(0, 501, 5):
+                marker = info.scale_layout(self.chart(value, "A label long enough to wrap over two or three lines"), 928, height, measure, wrap)["marker"]
+                tall = len(marker["label_lines"]) * info.MARKER_LABEL * info.LINE
+                at = marker["label_at"]
+                top, bottom = (at["y"], at["y"] + tall) if at["vertical"] == "top" else (at["y"] - tall, at["y"])
+                self.assertTrue(0 <= top and bottom <= height, (height, value, top, bottom))
+                value_top, value_bottom = marker["value_y"] - info.MARKER_VALUE * 0.5, marker["value_y"] + info.MARKER_VALUE * 0.5
+                self.assertTrue(bottom <= value_top or top >= value_bottom, (height, value))
+                self.assertTrue(all(measure(line, "text", info.MARKER_LABEL) <= marker["right"] for line in marker["label_lines"]))
+
+    def test_a_label_that_fits_nowhere_is_refused_with_how_far_to_shorten(self):
+        long = "word " * 40
+        with self.assertRaises(info.TooLong) as caught:
+            info.scale_layout(self.chart(250, long), 928, 742, measure, wrap)
+        self.assertIn("shorten", str(caught.exception))
+        with self.assertRaises(info.TooLong):  # not enough height above or below, even for two lines
+            info.scale_layout(self.chart(250, "two lines of label words here for it"), 928, 240, measure, wrap)
+
+    def test_a_marker_without_a_label_has_none_to_place(self):
+        marker = info.scale_layout(self.chart(45, None), 928, 742, measure, wrap)["marker"]
+        self.assertIsNone(marker["label_at"])
+        self.assertEqual(marker["label_lines"], [])
+
+
+class LineLabels(unittest.TestCase):
+    """An end point's value goes beside it, any other labelled point above or below it: never across the line."""
+
+    def items(self, values):
+        return [{"label": "P%d" % n, "value": v, "text": None} for n, v in enumerate(values, start=1)]
+
+    def box(self, layout, number):
+        point, at = layout["points"][number], layout["points"][number]["label_at"]
+        wide, tall = measure(point["value"], "text-bold", layout["value_size"]), layout["value_size"] * 1.25
+        left = at["x"] - wide if at["align"] == "right" else (at["x"] - wide / 2 if at["align"] == "center" else at["x"])
+        top = at["y"] - tall / 2 if at["vertical"] == "center" else (at["y"] - tall if at["vertical"] == "bottom" else at["y"])
+        return (left, top, left + wide, top + tall)
+
+    def check(self, values, marked=None, from_zero=True, height=594):
+        items = self.items(values)
+        try:
+            layout = info.line_layout(items, "AQI", from_zero, 928, height, measure, wrap, marked)
+        except info.TooLong:
+            return None  # refusing is allowed; a label on the line is not
+        path = [(p["x"], p["y"]) for p in layout["points"]]
+        boxes = [self.box(layout, n) for n in layout["named"]]
+        for number, box in zip(layout["named"], boxes):
+            self.assertTrue(box[0] >= 0 and box[2] <= 928 and box[1] >= 0 and box[3] <= layout["base"], (values, number, box))
+            for a, b in zip(path, path[1:]):
+                self.assertFalse(info.segment_hits_box(a, b, box), (values, number, box, a, b))
+        for n, first in enumerate(boxes):
+            for second in boxes[n + 1:]:
+                self.assertFalse(info.boxes_overlap(first, second), values)
+        return layout
+
+    def test_the_ends_are_labelled_beside_them_whichever_way_the_line_runs(self):
+        for values in ([120, 455, 430, 380, 300], [300, 380, 430, 455, 120], [5, 5, 5], [455, 120], [120, 455], [1, 2, 3, 4, 5, 6, 7]):
+            layout = self.check(values)
+            self.assertIsNotNone(layout, values)
+            first, last = layout["points"][0]["label_at"], layout["points"][-1]["label_at"]
+            self.assertEqual((first["align"], first["vertical"]), ("right", "center"), values)
+            self.assertEqual((last["align"], last["vertical"]), ("left", "center"), values)
+
+    def test_a_peak_is_labelled_above_and_a_valley_below(self):
+        layout = self.check([100, 200, 450, 200, 100], marked=["P3"])
+        self.assertEqual(layout["points"][2]["label_at"]["vertical"], "bottom")  # above the peak
+        layout = self.check([450, 300, 200, 300, 450], marked=["P3"])
+        self.assertEqual(layout["points"][2]["label_at"]["vertical"], "top")  # below the valley
+        layout = self.check([300, 380, 430, 455, 120], marked=["P2"])  # rising through the point: a corner, never across
+        self.assertIn(layout["points"][1]["label_at"]["vertical"], ("bottom", "top"))
+
+    def test_no_label_is_ever_on_the_line_over_many_shapes_of_data(self):
+        rng = random.Random(2026)
+        placed = tried = 0
+        for _ in range(400):
+            count = rng.randint(2, 24)
+            values = [rng.choice([0, rng.randint(0, 500), rng.randint(0, 500), rng.randint(400, 500)]) for _ in range(count)]
+            if max(values) == 0:
+                continue
+            marked = ["P%d" % n for n in rng.sample(range(1, count + 1), min(count, rng.randint(0, 3)))]
+            layout = self.check(values, marked, height=rng.choice([594, 742]))
+            tried += 1
+            placed += layout is not None
+            if not marked:
+                self.assertIsNotNone(layout, values)  # the two ends can always be labelled beside them
+        self.assertGreater(placed, tried * 0.7)  # even jagged data can mostly be labelled; the rest is refused, never drawn across
+
+    def test_data_that_cannot_be_labelled_cleanly_is_refused(self):
+        # a 24-point zigzag with six highlighted valleys: the line is everywhere a label could go
+        self.assertIsNone(self.check([300, 0] * 12, marked=["P%d" % n for n in range(2, 14, 2)]))
+        with self.assertRaises(info.TooLong) as caught:
+            info.line_layout(self.items([300, 0] * 12), "AQI", True, 928, 594, measure, wrap, ["P%d" % n for n in range(2, 14, 2)])
+        self.assertIn("highlight fewer points", str(caught.exception))
+
+    def test_room_is_made_beside_the_ends_for_their_labels(self):
+        layout = info.line_layout(self.items([1, 5]), "AQI", True, 928, 594, measure, wrap, None)
+        first, last = layout["points"][0], layout["points"][-1]
+        wide = measure("1 AQI", "text-bold", layout["value_size"])
+        self.assertGreaterEqual(first["x"], wide + 14)
+        self.assertLessEqual(last["x"], 928 - measure("5 AQI", "text-bold", layout["value_size"]) - 14)
+        self.assertTrue(wide > 0)
+
+    def test_segment_and_box_geometry(self):
+        box = (10, 10, 20, 20)
+        self.assertTrue(info.segment_hits_box((0, 15), (30, 15), box))  # straight through
+        self.assertTrue(info.segment_hits_box((0, 0), (30, 30), box))  # across a corner to corner
+        self.assertTrue(info.segment_hits_box((12, 12), (14, 14), box))  # wholly inside
+        self.assertFalse(info.segment_hits_box((0, 0), (5, 5), box))  # stops short
+        self.assertFalse(info.segment_hits_box((0, 25), (30, 25), box))  # passes below
+        self.assertFalse(info.segment_hits_box((25, 0), (25, 30), box))  # passes beside
+        self.assertTrue(info.segment_hits_box((0, 25), (30, 25), box, 6))  # clearance counts
+        self.assertTrue(info.boxes_overlap((0, 0, 10, 10), (5, 5, 15, 15)))
+        self.assertFalse(info.boxes_overlap((0, 0, 10, 10), (10, 0, 20, 10)))  # touching is not overlapping
+        self.assertTrue(info.boxes_overlap((0, 0, 10, 10), (10, 0, 20, 10), 2))
+
+
 class Templates(unittest.TestCase):
     def test_each_template_follows_the_design_and_is_on_disk(self):
         folder = os.path.join(KIT, "assets", "templates")
@@ -352,6 +568,247 @@ class Templates(unittest.TestCase):
             top = template(name)["signature"]["box"][1]
             for text in template(name)["texts"]:
                 self.assertLessEqual(text["box"][3], top, (name, text["slot"]))
+
+
+def fake_matplotlib():
+    """Stand-ins for the modules `Chart` and `draw_chart` import, recording what they are asked."""
+    parts = {}
+    matplotlib = types.ModuleType("matplotlib")
+    matplotlib.rcParamsDefault = {"text.usetex": False, "marker": "default"}
+    events = []
+
+    class Context:
+        def __init__(self, rc=None):
+            events.append(("rc_context", rc))
+
+        def __enter__(self):
+            events.append(("enter",))
+
+        def __exit__(self, *args):
+            events.append(("exit",))
+
+    matplotlib.rc_context = Context
+    style = types.ModuleType("matplotlib.style")
+    style.use = lambda path: events.append(("style.use", path))
+    matplotlib.style = style
+    font_manager = types.ModuleType("matplotlib.font_manager")
+    font_manager.FontProperties = mock.Mock(return_value="font")
+    font_manager.fontManager = mock.Mock()
+    matplotlib.font_manager = font_manager
+    agg = types.ModuleType("matplotlib.backends.backend_agg")
+    agg.FigureCanvasAgg = mock.Mock()
+    figure = types.ModuleType("matplotlib.figure")
+    figure.Figure = mock.Mock()
+    parts.update({"matplotlib": matplotlib, "matplotlib.style": style, "matplotlib.font_manager": font_manager,
+                  "matplotlib.backends": types.ModuleType("matplotlib.backends"), "matplotlib.backends.backend_agg": agg,
+                  "matplotlib.figure": figure})
+    return parts, events
+
+
+def fake_draw():
+    module = mock.Mock()
+    module.font_path.return_value = "font.ttf"
+
+    class DrawError(Exception):
+        def __init__(self, message, code=2):
+            super().__init__(message)
+            self.code = code
+
+    module.DrawError = DrawError
+    return module
+
+
+class DrawingCalls(unittest.TestCase):
+    """What the chart asks matplotlib to do, with matplotlib stood in for (so these run in the offline check)."""
+
+    STYLE = {"ink": "#111111", "paper": "#FFFFFF", "accent": "#111111", "display_font": "anton", "text_font": "atkinson-hyperlegible", "signature": ""}
+
+    def test_every_string_is_text_not_maths_and_not_tex(self):
+        parts, _events = fake_matplotlib()
+        with mock.patch.dict(sys.modules, parts):
+            chart = info.Chart(fake_draw(), self.STYLE, 928, 742)
+            for text in ("From $5 to $7", "Cost $\\frac{ and $x", "$$", "plain"):
+                chart.text(10, 10, text, "text", 20, "#111111")
+        calls = chart.axes.text.call_args_list
+        self.assertEqual(len(calls), 4)
+        for call in calls:
+            self.assertIs(call.kwargs["parse_math"], False)
+            self.assertIs(call.kwargs["usetex"], False)
+        self.assertEqual([c.args[2] for c in calls][:2], ["From $5 to $7", "Cost $\\frac{ and $x"])  # the string itself, untouched
+
+    def test_the_chart_is_drawn_inside_matplotlibs_defaults_plus_the_kits_style(self):
+        parts, events = fake_matplotlib()
+        drawn = []
+        spec = {"type": "bar", "data": [{"label": "a", "value": 1, "text": None}], "unit": None, "highlight": None, "from_zero": True}
+        with mock.patch.dict(sys.modules, parts), mock.patch.object(info, "Chart") as chart_class, \
+                mock.patch.dict(info.DRAWERS, {"bar": lambda *args: drawn.append(list(events))}):
+            info.draw_chart(spec, self.STYLE, fake_draw(), 928, 742)
+        matplotlib = parts["matplotlib"]
+        self.assertEqual(events[0], ("rc_context", matplotlib.rcParamsDefault))  # not the creator's matplotlibrc
+        self.assertEqual(events[1], ("enter",))
+        self.assertEqual(events[2], ("style.use", str(info.STYLE_FILE)))
+        self.assertTrue(str(info.STYLE_FILE).endswith(os.path.join("assets", "hrizzup.mplstyle")))
+        self.assertTrue(info.STYLE_FILE.is_file())
+        self.assertEqual(len(drawn), 1)
+        self.assertEqual([e[0] for e in drawn[0]], ["rc_context", "enter", "style.use"])  # the drawing is inside it
+        self.assertEqual(events[-1], ("exit",))
+        chart_class.assert_called_once()
+
+    def test_a_missing_kit_style_is_exit_3_naming_the_fix(self):
+        parts, _events = fake_matplotlib()
+        draw_module = fake_draw()
+        with mock.patch.dict(sys.modules, parts), mock.patch.object(info, "STYLE_FILE", info.KIT / "assets" / "none.mplstyle"):
+            with self.assertRaises(draw_module.DrawError) as caught:
+                info.draw_chart({"type": "bar", "data": [], "unit": None}, self.STYLE, draw_module, 10, 10)
+        self.assertEqual(caught.exception.code, 3)
+        self.assertIn("get the kit again", str(caught.exception))
+
+
+def have(*names):
+    try:
+        for name in names:
+            __import__(name)
+        return True
+    except ImportError:
+        return False
+
+
+def own_draw():
+    """This kit's own copy of hrizzup_draw (each skill's copy looks for fonts beside itself), or None if Pillow is missing."""
+    try:
+        import importlib.util as util
+        found = util.spec_from_file_location("hrizzup_draw_infographic", os.path.join(SCRIPTS, "hrizzup_draw.py"))
+        module = util.module_from_spec(found)
+        found.loader.exec_module(module)
+        return module
+    except ImportError:
+        return None
+
+
+@unittest.skipUnless(have("PIL", "fontTools", "matplotlib", "numpy"), "needs Pillow, fontTools, matplotlib and numpy")
+class RealDrawing(unittest.TestCase):
+    """The chart drawn for real, where the packages are installed (`uv run --with ...`, or the kit's own environment)."""
+
+    def spec(self, label):
+        return info.validate_spec({"template": "chart-card", "title": "T", "source": "S", "chart": {
+            "type": "bar", "data": [{"label": label, "value": 7}, {"label": "Other", "value": 3}], "unit": "USD"}})["chart"]
+
+    def draw(self, label):
+        module = own_draw()
+        return info.draw_chart(self.spec(label), module.load_style(None), module, 928, 742)
+
+    def test_dollar_signs_are_not_maths(self):
+        import matplotlib
+        seen = []
+        original = info.Chart.text
+        info.Chart.text = lambda self, x, y, text, *rest, **kw: (seen.append(text), original(self, x, y, text, *rest, **kw))[1]
+        try:
+            picture = self.draw("From $5 to $7")
+        finally:
+            info.Chart.text = original
+        self.assertEqual(picture.size, (928, 742))
+        self.assertIn("From $5 to $7", seen)
+        self.assertIsNotNone(matplotlib)
+
+    def test_a_string_that_would_break_the_maths_reader_is_drawn_as_it_is(self):
+        for label in ("Cost $\\frac{ and $x", "$", "$$", "a $b$ c \\"):
+            self.assertEqual(self.draw(label).size, (928, 742), label)
+
+    def test_the_text_objects_have_maths_and_tex_off(self):
+        module = own_draw()
+        chart = info.Chart(module, module.load_style(None), 200, 100)
+        chart.text(5, 5, "$5 to $7", "text", 20, "#111111")
+        item = chart.axes.texts[0]
+        self.assertFalse(item.get_parse_math())
+        self.assertFalse(item.get_usetex())
+        self.assertEqual(item.get_text(), "$5 to $7")
+
+    def test_a_creators_matplotlibrc_cannot_turn_tex_on(self):
+        import matplotlib
+        saved = matplotlib.rcParams["text.usetex"]
+        matplotlib.rcParams["text.usetex"] = True  # what a matplotlibrc with text.usetex: True does
+        try:
+            self.assertEqual(self.draw("Delhi").size, (928, 742))  # without the fix this needs a TeX installation
+            self.assertTrue(matplotlib.rcParams["text.usetex"])  # and the creator's own settings are left as they were
+        finally:
+            matplotlib.rcParams["text.usetex"] = saved
+
+    def test_the_marker_label_of_a_low_band_is_drawn_inside_the_picture(self):
+        module = own_draw()
+        chart = info.validate_spec(dict(example_spec(), chart=dict(example_spec()["chart"], marker={"value": 45, "label": "Shillong's reading on a clear day"})))["chart"]
+        picture = info.draw_chart(chart, module.load_style(None), module, 928, 742)
+        bottom_left = picture.crop((0, 742 - 20, 280, 742)).getextrema()  # the foot of the callout's column: empty paper
+        self.assertEqual(bottom_left, ((255, 255), (255, 255), (255, 255)))
+
+
+@unittest.skipUnless(have("PIL", "fontTools"), "needs Pillow and fontTools")
+class Pictures(unittest.TestCase):
+    """Your own chart as a picture: its transparency goes over the paper, and one that is too big is refused."""
+
+    def setUp(self):
+        self.folder = tempfile.mkdtemp(prefix="infographic-test-")
+        self.addCleanup(__import__("shutil").rmtree, self.folder, True)
+
+    def run_with_image(self, image, name="own.png", style=None, **options):
+        spec = {"template": "chart-card", "title": "T", "source": "S", "image": name}
+        with open(os.path.join(self.folder, "spec.json"), "w", encoding="utf-8") as f:
+            json.dump(spec, f)
+        image.save(os.path.join(self.folder, name), **options)
+        argv = ["--spec", os.path.join(self.folder, "spec.json"), "--out", os.path.join(self.folder, "card.png")]
+        if style:
+            with open(os.path.join(self.folder, "style.json"), "w", encoding="utf-8") as f:
+                json.dump(style, f)
+            argv += ["--style", os.path.join(self.folder, "style.json")]
+        with mock.patch.dict(sys.modules, {"hrizzup_draw": own_draw()}):
+            return run_main(argv)
+
+    def test_transparency_goes_over_the_papers_colour(self):
+        from PIL import Image
+        code, report = self.run_with_image(Image.new("RGBA", (200, 100), (255, 0, 0, 0)), style={"paper": "#EEDDCC"})
+        self.assertEqual(code, 0, report)
+        card = Image.open(os.path.join(self.folder, "card.png")).convert("RGB")
+        self.assertEqual(card.getpixel((540, 756)), (0xEE, 0xDD, 0xCC))  # the middle of the chart's place: paper, not black or white
+
+    def test_a_16_bit_grey_picture_is_scaled_not_clipped(self):
+        from PIL import Image
+        grey = Image.new("I;16", (200, 100))
+        grey.putdata([32768] * 200 * 100)
+        code, report = self.run_with_image(grey)
+        self.assertEqual(code, 0, report)
+        card = Image.open(os.path.join(self.folder, "card.png")).convert("RGB")
+        self.assertEqual(card.getpixel((540, 756)), (128, 128, 128))  # half grey, not white
+
+    def test_a_picture_that_is_not_a_png_jpeg_or_webp_exits_2(self):
+        from PIL import Image
+        code, report = self.run_with_image(Image.new("F", (20, 20)), name="own.tif")  # a floating-point TIFF
+        self.assertEqual(code, 2)
+        self.assertIn("use a PNG, JPEG or WebP", report["problem"])
+
+    def test_a_huge_picture_exits_2_before_it_is_decoded(self):
+        from PIL import Image
+        with mock.patch("PIL.PngImagePlugin.PngImageFile.load", side_effect=AssertionError("decoded the pixels")):
+            code, report = self.run_with_image(Image.new("1", (8190, 8190)))
+        self.assertEqual(code, 2)
+        self.assertIn("megapixels", report["problem"])
+
+    def test_the_card_never_overwrites_its_picture_however_it_is_linked(self):
+        from PIL import Image
+        spec = {"template": "chart-card", "title": "T", "source": "S", "image": "own.png"}
+        with open(os.path.join(self.folder, "spec.json"), "w", encoding="utf-8") as f:
+            json.dump(spec, f)
+        picture = os.path.join(self.folder, "own.png")
+        Image.new("RGB", (50, 50), (1, 2, 3)).save(picture)
+        before = open(picture, "rb").read()
+        for make_link in (os.symlink, os.link):
+            link = os.path.join(self.folder, "out-%s.png" % make_link.__name__)
+            try:
+                make_link(picture, link)
+            except (OSError, NotImplementedError):
+                continue
+            with mock.patch.dict(sys.modules, {"hrizzup_draw": own_draw()}):
+                code, report = run_main(["--spec", os.path.join(self.folder, "spec.json"), "--out", link])
+            self.assertEqual((code, "overwrite" in report["problem"]), (2, True), make_link.__name__)
+        self.assertEqual(open(picture, "rb").read(), before)
 
 
 class Command(unittest.TestCase):
@@ -388,10 +845,75 @@ class Command(unittest.TestCase):
             with open(path, encoding="utf-8") as f:
                 self.assertEqual(json.load(f), BARS)
 
+    def test_a_wrong_command_line_is_bad_input_with_the_json_line_not_argparses_own_exit(self):
+        for argv in (["--out", "i.png"], ["--bogus"], ["--spec", "s.json"], ["--spec", "s.json", "--out"], ["--spec", "s.json", "--out", "i.png", "--size"]):
+            code, report = run_main(argv)
+            self.assertEqual(code, 2, argv)
+            self.assertFalse(report["ok"])
+            self.assertTrue(report["problem"])
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as caught:
+            info.main(["--help"])
+        self.assertEqual(caught.exception.code, 0)
+
+    def test_a_link_to_an_input_is_the_input(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = self.write(folder, BARS)
+            style = self.write(folder, {"ink": "#111111"}, "style.json")
+            for make_link in (os.symlink, os.link):
+                for target, flag in ((path, "--spec"), (style, "--style")):
+                    link = os.path.join(folder, "i-%s-%s.png" % (make_link.__name__, flag[2:]))
+                    try:
+                        make_link(target, link)
+                    except (OSError, NotImplementedError):
+                        continue
+                    code, report = run_main(["--spec", path, "--style", style, "--out", link])
+                    self.assertEqual((code, "overwrite" in report["problem"]), (2, True), (make_link.__name__, flag))
+            with open(path, encoding="utf-8") as f:
+                self.assertEqual(json.load(f), BARS)
+
+    def test_whatever_goes_wrong_the_last_line_is_the_json_line(self):
+        fake = fake_draw()
+        with tempfile.TemporaryDirectory() as folder:
+            steps = {"template": "steps-card", "title": "T", "source": "S", "steps": ["a", "b"]}
+            argv = ["--spec", self.write(folder, steps), "--out", os.path.join(folder, "i.png")]
+            for error, code in ((RuntimeError("boom"), 1), (KeyError("slot"), 1), (ImportError("No module named matplotlib"), 3)):
+                fake.load_style = mock.Mock(side_effect=error)
+                with mock.patch.dict(sys.modules, {"hrizzup_draw": fake}):
+                    got, report = run_main(argv)
+                self.assertEqual(got, code, error)
+                self.assertFalse(report["ok"])
+                self.assertEqual(set(report), {"ok", "outputs", "checks", "problem"})
+                self.assertTrue(report["problem"])
+
+    def test_a_stat_card_with_a_subtitle_exits_2_before_anything_is_imported(self):
+        with tempfile.TemporaryDirectory() as folder:
+            stat = {"template": "stat-card", "title": "T", "subtitle": "dropped", "source": "S", "chart": {"type": "stat", "value": "450+", "label": "l"}}
+            code, report = run_main(["--spec", self.write(folder, stat), "--out", os.path.join(folder, "i.png")])
+            self.assertEqual(code, 2)
+            self.assertIn("a stat-card has no subtitle: put it in the note", report["problem"])
+
     def test_help_ends_with_an_example_that_names_the_command(self):
         tail = "\n".join(info.make_parser().format_help().strip().split("\n")[-6:]).lower()
         self.assertIn("example", tail)
         self.assertIn("infographic.py", tail)
+
+
+class Words(unittest.TestCase):
+    """What the skill's own words promise matches what the command does (M3's review)."""
+
+    def read(self, *parts):
+        with open(os.path.join(ROOT, "skills", "infographic", *parts), encoding="utf-8") as f:
+            return f.read()
+
+    def test_the_skill_and_its_guide_say_the_fonts_draw_english_letters_only(self):
+        for text in (self.read("SKILL.md"), self.read("references", "infographic-guide.md")):
+            self.assertIn("English (Latin) letters", text)
+            self.assertIn("Hindi", text)
+            self.assertIn("refused for now", text)
+
+    def test_the_skill_file_says_which_specs_take_a_subtitle(self):
+        text = self.read("SKILL.md")
+        self.assertIn("A `chart-card` and a `steps-card` may have a `\"subtitle\"`; a `stat-card` has none", text)
 
 
 if __name__ == "__main__":

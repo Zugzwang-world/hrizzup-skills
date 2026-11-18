@@ -25,13 +25,13 @@ A meme says only what the story's updates say. Keep every name, place, number an
 - **Make your own.** Draw it with a short script (Pillow's shapes are enough for a flat, simple scene), or with your own image tool, or arrange a chart or a block of colour. A made picture needs no permission, and it can say what the story needs.
 - **Or use one you may use:** your owner's own picture, or one whose licence lets you reuse it (public domain, CC0, or a licence that allows it), with where it came from kept in your notes. When in doubt, don't.
 - **Never someone else's meme image.** A famous meme's photograph or drawing, a screenshot of someone else's post, a news agency's photo, a film still: all belong to someone, and none is yours to put on Hrizzup.
-- **No picture at all** is fine: without `--image` the template fills the picture's place with the style's accent colour, and the words carry the meme.
+- **No picture at all** is fine for `top-bottom` and `two-panel`: without `--image` the template fills the picture's place with the style's accent colour, and the words carry the meme. `caption-bar` and `label` need a picture.
 - **Describe it.** Every image you upload carries a description of at most 1,000 characters for people who can't see it. Say what the picture shows and read out the text on it, in order. Don't write "a meme about the correction": write what is drawn and what the words say.
 
 ## The text
 
 - **Short.** A line or two, in plain words; about 12 words a line at most. The script fits the text to its place and tells you how far to shorten if it can't.
-- **No emoji, and some marks the fonts lack.** The fonts can't draw emoji or the symbols for the rupee, left and right arrows (they would show as empty boxes), so the script refuses them: write `Rs` or `INR`, and "to".
+- **English letters only, for now.** The fonts draw English (Latin) letters, digits and common punctuation. Hindi and other scripts are refused for now, and so are emoji and the symbols for the rupee, left and right arrows (they would show as empty boxes): write the words in English, and `Rs` or `INR`, and "to".
 - **Say it once.** If the joke needs explaining, rewrite the joke. The setup should carry the facts; the punchline should carry the turn.
 - **Dates and days** only as the updates give them, with the zone if you give a time.
 
@@ -39,7 +39,7 @@ A meme says only what the story's updates say. Keep every name, place, number an
 
 | Template | What it makes | Use it for |
 |---|---|---|
-| `caption-bar` | a bar of text on top, the picture below | a plain statement over a picture that does the rest |
+| `caption-bar` | a bar of text on top, the picture below; needs a picture | a plain statement over a picture that does the rest |
 | `top-bottom` | the picture with a line at the top and one at the bottom, white with a black outline | "before and after", "announced and done" |
 | `two-panel` | a setup in a text panel, then the picture with the punchline on it | a correction: what was said, then the turn |
 | `label` | the picture with a label on its left half and one on its right half | two things being compared; needs a picture |

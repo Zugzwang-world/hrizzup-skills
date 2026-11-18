@@ -43,6 +43,11 @@ IMAGE_BUDGET_BYTES = 2 * MIB
 AUDIO_BUDGET_BYTES = 5 * MIB
 VIDEO_BUDGET_BYTES = 25 * MIB
 
+# ---- the pictures a command reads: a creator's own picture or chart (not Hrizzup's limits; what a command accepts) ----
+PICTURE_INPUT_MAX_BYTES = 25 * MIB  # a picture file read
+PICTURE_INPUT_MAX_PIXELS = 40_000_000  # 40 megapixels, counted from the header before any pixel is decoded
+PICTURE_INPUT_MAX_SIDE = 8192
+
 # ---- FFmpeg's allowlist (design 5): what the builders may ask for ----
 FFMPEG_FILTERS = ("loudnorm", "aresample", "scale", "crop", "fps", "format", "setsar")
 FFMPEG_ENCODERS = ("libx264", "h264_videotoolbox", "libopenh264", "aac", "pcm_s16le")
@@ -360,6 +365,30 @@ def inspect(path: "str | os.PathLike[str]") -> MediaInfo:
             raise MediaError("an .m4a file with a video track")
         return info
     raise MediaError("not a picture, MP4 or M4A by its name: %s" % extension)
+
+
+def input_picture_problems(width: int, height: int) -> "list[str]":
+    """Why a picture a command is asked to read is too big to open (an empty list if it isn't). Call it with the size
+    read from the file's header, before the pixels are decoded, so a huge picture never fills the machine's memory."""
+    found: "list[str]" = []
+    if max(width, height) > PICTURE_INPUT_MAX_SIDE:
+        found.append("%dx%d is over %d px a side" % (width, height, PICTURE_INPUT_MAX_SIDE))
+    if width * height > PICTURE_INPUT_MAX_PIXELS:
+        found.append("%dx%d is %.1f megapixels, over the %d a command reads" % (
+            width, height, width * height / 1e6, PICTURE_INPUT_MAX_PIXELS // 1_000_000))
+    return found
+
+
+def same_file(first: "str | os.PathLike[str]", second: "str | os.PathLike[str]") -> bool:
+    """Whether two paths name the same file: the same path, or (when both exist) the same file on disk, whatever the
+    spelling: a different case on a case-insensitive disk, a symbolic link, a hard link, `..` in the path. A command
+    uses it so its output never overwrites one of its inputs."""
+    try:
+        if os.path.abspath(first) == os.path.abspath(second):
+            return True
+        return os.path.exists(first) and os.path.exists(second) and os.path.samefile(first, second)
+    except (OSError, ValueError):
+        return False
 
 
 def problems(info: MediaInfo, role: str, budget: bool = True) -> "list[str]":

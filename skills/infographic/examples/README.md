@@ -45,11 +45,11 @@ python3.12 scripts/check_links.py https://airquality.cpcb.gov.in/ccr/ https://st
 
 ## What the link checker returned
 
-The checker ran on 18 November 2026 at 12:08 UTC:
+The checker ran on 18 November 2026 at 12:39 UTC (an earlier run took the portal's title from an HTML comment ahead of its real title tag, which the checker now skips):
 
 | Address | Status | Result |
 |---|---|---|
-| https://airquality.cpcb.gov.in/ccr/ | 200, `text/html` | opens; the checker's title reads "Central Control Room | Air Quality" (the page holds that text in an HTML comment ahead of its real title tag); last modified 18 Nov 2026 |
+| https://airquality.cpcb.gov.in/ccr/ | 200, `text/html` | opens; title "Air Quality Portal | Central Pollution Control Board (CPCB)"; last modified 18 Nov 2026 |
 | https://static.pib.gov.in/WriteReadData/specificdocs/documents/2026/sep/doc_9816_20260907_20291701.pdf | 200, `application/pdf` | opens; last modified 7 Sep 2026 |
 | https://example.com/sources/delhi-air-quality-monday-morning | 404 | an example address, as in every sample: it doesn't open |
 
@@ -57,7 +57,7 @@ The checker ran on 18 November 2026 at 12:08 UTC:
 
 ## Results
 
-- `infographic.png`: a PNG, 1080 x 1350, 89,166 bytes (the repository's budget for a picture is 2 MiB): the title, the subtitle, six bands stacked in proportion from Good at the bottom to Severe at the top, each named with its range, a black marker at 450 beside the large number 450 and "The example story's reading", the source line, and the signature line "Illustrative sample · hrizzup-skills". Checked: `strings` on the file prints no home-folder path ("checked"), and the file holds no metadata, only the image's header, its data and its end.
+- `infographic.png`: a PNG, 1080 x 1350, 89,156 bytes (the repository's budget for a picture is 2 MiB): the title, the subtitle, six bands stacked in proportion from Good at the bottom to Severe at the top, each named with its range, a black marker at 450 beside the large number 450 and "The example story's reading", the source line, and the signature line "Illustrative sample · hrizzup-skills". Checked: `strings` on the file prints no home-folder path ("checked"), and the file holds no metadata, only the image's header, its data and its end.
 - `post.json`: the post the sample would make (without its `requestId`): an image post, format `infographic`, a 484-character caption that says the message, where the bands come from and what is unconfirmed (which stations passed 450 first, the question the brief's desk already asks), the two real sources and the example one behind the 450, and a description of 715 characters.
 
 ## Files

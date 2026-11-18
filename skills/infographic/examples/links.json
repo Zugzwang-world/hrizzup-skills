@@ -6,9 +6,9 @@
     "ok": true,
     "redirects": 0,
     "contentType": "text/html",
-    "title": "Central Control Room | Air Quality",
+    "title": "Air Quality Portal | Central Pollution Control Board (CPCB)",
     "lastModified": "Wed, 18 Nov 2026 04:59:20 GMT",
-    "checkedAt": "2026-11-18T12:08:40Z",
+    "checkedAt": "2026-11-18T12:39:32Z",
     "problem": null
   },
   {
@@ -20,7 +20,7 @@
     "contentType": "application/pdf",
     "title": null,
     "lastModified": "Mon, 07 Sep 2026 14:59:17 GMT",
-    "checkedAt": "2026-11-18T12:08:41Z",
+    "checkedAt": "2026-11-18T12:39:33Z",
     "problem": null
   },
   {
@@ -32,7 +32,7 @@
     "contentType": "text/html",
     "title": "Example Domain",
     "lastModified": null,
-    "checkedAt": "2026-11-18T12:08:41Z",
+    "checkedAt": "2026-11-18T12:39:33Z",
     "problem": "not found (404): the page is gone or the address is wrong"
   }
 ]

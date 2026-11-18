@@ -6,21 +6,23 @@
 # ///
 """Make a meme: a picture and one or two short texts, laid out by one of four templates (1080 x 1080 or 1080 x 1350).
 
-    caption-bar   a bar of text on top, the picture below it          (--text)
+    caption-bar   a bar of text on top, the picture below it          (--text; needs --image)
     top-bottom    the picture with a line at the top and one at the bottom, white with a black outline
                   (--text, and --text2 for the bottom)
     two-panel     a setup in a text panel, then the picture with the punchline on it   (--text, --text2)
     label         the picture with a label on its left half and one on its right half  (--text, --text2;
                   needs --image)
 
-Without --image the picture's place is filled with the style's accent colour (a template that needs a
-picture says so and exits 2). The picture must be one you made or may use: never someone else's meme image.
+Without --image, top-bottom and two-panel fill the picture's place with the style's accent colour; caption-bar and
+label need a picture and exit 2 without one. The picture must be one you made or may use: never someone else's meme
+image, and at most 25 MiB, 40 megapixels and 8,192 px a side.
 The style (--style) gives the colours, the fonts and the signature; the templates have none of their own.
 
 The last line it prints is one JSON object: {"ok", "outputs", "checks", "problem"}. Exit codes: 0 made and
 checked; 1 the meme failed a Hrizzup limit or quality check (a text too long: it says how far to shorten);
-2 bad input (a character the font can't draw, emoji included; a template that needs a picture); 3 a missing
-package or kit file.
+2 bad input (a character the font can't draw, emoji and Hindi included: the fonts draw English letters only for
+now; a template that needs a picture; a picture too big); 3 a missing package or kit file. A mistake in this command
+itself still ends in the JSON line, with exit 1.
 """
 
 from __future__ import annotations
@@ -40,8 +42,6 @@ TEMPLATE_IDS = ("caption-bar", "top-bottom", "two-panel", "label")
 SIZES = ((1080, 1080), (1080, 1350))  # a meme's sizes (Hrizzup's format guide)
 NEEDS_TEXT2 = ("two-panel", "label")  # the templates that need both texts
 MAX_TEXT = 200  # characters in one text
-MAX_IMAGE_FILE = 25 * 1024 * 1024  # bytes of a picture read
-IMAGE_FORMATS = ("PNG", "JPEG", "MPO", "WEBP")  # what Pillow calls them (MPO is a JPEG from a phone)
 
 
 class InputError(Exception):
@@ -100,7 +100,7 @@ def check_paths(args):
     """The output folder and extension; --out is never an input. Returns the absolute output path."""
     out = os.path.abspath(args.out)
     for given in (args.image, args.style):
-        if given and os.path.abspath(given) == out:
+        if given and hrizzup_media.same_file(given, out):
             raise InputError("--out would overwrite %s, an input" % given)
     if os.path.splitext(out)[1].lower() not in (".png", ".jpg", ".jpeg", ".webp"):
         raise InputError("--out is a .png, .jpg or .webp file")
@@ -128,8 +128,15 @@ def finish(ok, outputs, checks, problem, code):
     return code
 
 
+class Parser(argparse.ArgumentParser):
+    """A command line that is wrong is bad input (exit 2, with the JSON line), not argparse's own exit."""
+
+    def error(self, message):
+        raise InputError(message)
+
+
 def make_parser():
-    parser = argparse.ArgumentParser(
+    parser = Parser(
         prog="meme.py",
         description="Make a meme (1080 x 1080 or 1080 x 1350) from a picture and one or two short texts.",
         epilog="Example: uv run scripts/meme.py --template top-bottom --image picture.png --text \"Monday's headline\" "
@@ -146,28 +153,23 @@ def make_parser():
     return parser
 
 
-def load_picture(path):
-    """The picture as a Pillow image, or InputError."""
-    from PIL import Image, UnidentifiedImageError
-    try:
-        size = os.path.getsize(path)
-    except OSError as error:
-        raise InputError("can't read the picture %s: %s" % (path, error.strerror or type(error).__name__))
-    if size > MAX_IMAGE_FILE:
-        raise InputError("the picture %s is %d MiB; at most %d MiB" % (path, size // (1024 * 1024), MAX_IMAGE_FILE // (1024 * 1024)))
-    try:
-        picture = Image.open(path)
-        picture.load()
-    except (OSError, UnidentifiedImageError, Image.DecompressionBombError, ValueError) as error:
-        raise InputError("can't read %s as a picture: %s" % (path, error))
-    if picture.format not in IMAGE_FORMATS:
-        raise InputError("the picture %s is a %s; use a PNG, JPEG or WebP" % (path, picture.format))
-    return picture
-
-
 def main(argv=None):
-    args = make_parser().parse_args(argv)
+    """Make the meme; whatever goes wrong, the last line printed is the JSON line."""
     try:
+        return make(argv)
+    except ImportError as error:  # a package turned out to be missing deep inside a call
+        message = "a Python package or module is missing (%s): get the kit again and install its packages" % error
+        log("meme.py: " + message)
+        return finish(False, [], [], message, 3)
+    except Exception as error:  # the last resort: a mistake in this command, never a bare traceback
+        message = "meme.py failed unexpectedly (%s: %s): this is a mistake in the kit, so tell your owner" % (type(error).__name__, error)
+        log("meme.py: " + message)
+        return finish(False, [], [], message, 1)
+
+
+def make(argv=None):
+    try:
+        args = make_parser().parse_args(argv)
         size, focus, out = parse_size(args.size), parse_focus(args.focus), check_paths(args)
     except InputError as error:
         log("meme.py: %s" % error)
@@ -186,7 +188,7 @@ def main(argv=None):
         style = hrizzup_draw.load_style(args.style)
         template = hrizzup_draw.load_template(TEMPLATES / (args.template + ".json"))
         texts = texts_for(args.template, args.text, args.text2, [t["slot"] for t in template["texts"]])
-        picture = load_picture(args.image) if args.image else None
+        picture = hrizzup_draw.load_picture(args.image) if args.image else None
         box = template["picture"]
         if picture is None and box is not None:
             if box["required"]:

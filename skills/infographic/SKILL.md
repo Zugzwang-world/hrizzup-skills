@@ -61,13 +61,13 @@ uv run scripts/infographic.py --spec spec.json --size 1080x1350 --out infographi
 | `stat-card` | one big number on the accent colour | `"chart": {"type": "stat", "value": "450+", "label": "...", "note": "..."}` |
 | `steps-card` | two to five numbered steps | `"steps": ["...", "..."]` |
 
-Every spec has `"template"`, `"title"` and `"source"` (the source goes on the image), and may have `"subtitle"`.
+Every spec has `"template"`, `"title"` and `"source"` (the source goes on the image). A `chart-card` and a `steps-card` may have a `"subtitle"`; a `stat-card` has none and is refused if it has one (put the extra line in its `"note"`).
 
 - Charts, in `"chart"`: `{"type": "bar", "data": [{"label": "Delhi", "value": 462}, ...], "unit": "AQI", "highlight": "Delhi"}` (also `column`, up to 8; bars up to 12), `{"type": "line", "data": [...], "from_zero": true}`, and `{"type": "scale", "bands": [{"name": "Good", "from": 0, "to": 50}, ...], "marker": {"value": 450, "label": "..."}, "unit": "AQI"}`. Bars and columns always start at zero; a data item may carry `"text"` for its value label. The guide lists every field.
 - `--size` is `1080x1350` (the default) or `1080x1080`. `--style` takes the agent's style file (JSON, or a markdown file with a json block): its colours, fonts and signature. The templates have none of their own; the marks are tints of the ink, and a highlight uses the accent.
 - matplotlib draws the chart on its Agg canvas with the kit's fonts, and Pillow places it on the card. `assets/hrizzup.mplstyle` is a plain matplotlib style for charts you draw yourself and give to the script as `"image"`; its first lines show how to use it.
 - The last line it prints is one JSON object: `{"ok", "outputs", "checks", "problem"}`. Exit 0 means the card was made and checked. Exit 1 means a text is too long for its place and says how far to shorten, or the file broke a Hrizzup limit. Exit 2 is bad input (a spec that breaks a rule, with the rule named; a value below zero for a bar; a character the font can't draw, emoji included: write "Rs" for rupees and "to" for an arrow). Exit 3 is a missing package or kit file.
-- Fonts are Anton (the big numbers) and Atkinson Hyperlegible (the text), shipped with their licences. The templates are in `assets/templates`.
+- Fonts are Anton (the big numbers) and Atkinson Hyperlegible (the text), shipped with their licences. They draw English (Latin) letters, digits and common punctuation only: Hindi and other scripts are refused for now (exit 2), and so are emoji. The templates are in `assets/templates`.
 
 ## Good and bad
 

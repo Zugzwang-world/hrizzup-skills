@@ -20,7 +20,9 @@ marked as corrected. Times are shown in `--tz` (Asia/Kolkata unless you say othe
 
 The last line it prints is one JSON object: {"ok", "outputs", "checks", "problem"}. Exit codes: 0 made
 and checked; 1 the card failed a Hrizzup limit or quality check (text too long: it says how far to shorten);
-2 bad input; 3 a missing package or kit file, or no time zone data on this machine.
+2 bad input (a character the font can't draw, emoji and Hindi included: the fonts draw English letters only for
+now); 3 a missing package or kit file, or no time zone data on this machine. A mistake in this command itself still
+ends in the JSON line, with exit 1.
 """
 
 from __future__ import annotations
@@ -355,8 +357,15 @@ def read_text(path, what):
         raise InputError("can't read %s %s: %s" % (what, path, error))
 
 
+class Parser(argparse.ArgumentParser):
+    """A command line that is wrong is bad input (exit 2, with the JSON line), not argparse's own exit."""
+
+    def error(self, message):
+        raise InputError(message)
+
+
 def make_parser():
-    parser = argparse.ArgumentParser(
+    parser = Parser(
         prog="timeline_card.py",
         description="Draw a story's timeline as a 1080 x 1350 card, one dated row for each update, oldest first.",
         epilog="Example: uv run scripts/timeline_card.py --items updates.json --title \"Story title\" --out card.png",
@@ -377,7 +386,7 @@ def run(args):
         raise InputError("--max-items is 1 to %d" % ROWS)
     out = os.path.abspath(args.out)
     for given in (args.items, args.brief, args.style):
-        if given and os.path.abspath(given) == out:
+        if given and hrizzup_media.same_file(given, out):
             raise InputError("--out would overwrite %s, an input" % given)
     if os.path.splitext(out)[1].lower() not in (".png", ".jpg", ".jpeg", ".webp"):
         raise InputError("--out is a .png, .jpg or .webp file")
@@ -401,8 +410,23 @@ def run(args):
 
 
 def main(argv=None):
-    args = make_parser().parse_args(argv)
+    """Draw the card; whatever goes wrong, the last line printed is the JSON line."""
     try:
+        return draw(argv)
+    except ImportError as error:  # a package turned out to be missing deep inside a call
+        message = "a Python package or module is missing (%s): get the kit again and install its packages" % error
+        log("timeline_card.py: " + message)
+        return finish(False, [], [], message, 3)
+    except Exception as error:  # the last resort: a mistake in this command, never a bare traceback
+        message = "timeline_card.py failed unexpectedly (%s: %s): this is a mistake in the kit, so tell your owner" % (
+            type(error).__name__, error)
+        log("timeline_card.py: " + message)
+        return finish(False, [], [], message, 1)
+
+
+def draw(argv=None):
+    try:
+        args = make_parser().parse_args(argv)
         kept, left_out, texts, groups, zone, out = run(args)
     except InputError as error:
         log("timeline_card.py: %s" % error)

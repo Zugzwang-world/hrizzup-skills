@@ -710,6 +710,38 @@ class Titles(unittest.TestCase):
     def test_a_title_that_never_closes_is_none(self):
         self.assertIsNone(links.page_title(self.HTML, b"<title>open forever"))
 
+    def test_a_title_inside_a_comment_a_script_or_a_style_is_not_the_pages(self):
+        cases = (
+            # the real pattern: a commented-out title ahead of the real one (CPCB's Air Quality Portal)
+            (b"<head><!-- <title>Central Control Room | Air Quality</title> -->\n<title>Air Quality Portal | CPCB</title></head>", "Air Quality Portal | CPCB"),
+            (b"<!-- <title>old</title> --><!-- another --><title>New</title>", "New"),
+            (b"<!--<title>a</title>--><TITLE>B</TITLE>", "B"),
+            (b"<!-- a --> text <!-- <title>c</title> <!-- nested start --> --><title>D</title>", "D"),
+            (b"<script>var t = '<title>in a script</title>';</script><title>E</title>", "E"),
+            (b"<SCRIPT type=text/javascript>document.write('<title>x</title>')</SCRIPT><title>F</title>", "F"),
+            (b"<style>/* <title>no</title> */</style><title>G</title>", "G"),
+            (b"<scripts><title>H</title></scripts>", "H"),  # <scripts> is not a script tag
+            (b"<!----><title>I</title>", "I"),  # an empty comment
+            (b"<!--><title>J</title>", "J"),  # HTML ends this one at once
+            (b"<!--[if IE]><title>ie</title><![endif]--><title>K</title>", "K"),
+        )
+        for body, title in cases:
+            self.assertEqual(links.page_title(self.HTML, body), title, body)
+
+    def test_only_a_commented_or_scripted_title_gives_none(self):
+        for body in (b"<!-- <title>x</title> -->", b"<script><title>x</title></script>", b"<style><title>x</title></style>",
+                     b"<!-- never closed <title>x</title>", b"<script>never closed <title>x</title>", b"<p>no title</p><!-- <title>x</title> -->"):
+            self.assertIsNone(links.page_title(self.HTML, body), body)
+
+    def test_a_page_of_comments_scripts_and_titles_takes_no_longer_than_its_length(self):
+        bodies = (b"<!-- " * 13000, b"<!---->" * 9000, b"<!-- x -->" * 6500, b"<script>" * 8000, b"<script></script>" * 4000,
+                  b"<style>" * 9000, b"<!--<title>" * 6000, b"<title>" * 4000 + b"<!--" * 4000, b"<!-- --><title " * 4000,
+                  b"<script><!-- <style><title></script>" * 1800)
+        for body in bodies:
+            started = time.monotonic()
+            links.page_title(self.HTML, body[:links.MAX_READ])
+            self.assertLess(time.monotonic() - started, 1.0, body[:14])
+
     def test_the_charset_of_the_header_is_used(self):
         body = "<title>caf\u00e9</title>".encode("latin-1")
         self.assertEqual(links.page_title({"content-type": "text/html; charset=ISO-8859-1"}, body), "caf\u00e9")

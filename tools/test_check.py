@@ -938,6 +938,32 @@ class Locks(Repo):
         edit(self.root, "NOTICES.md", NOTICE_HEADER, NOTICE_HEADER + extras)
         self.assertEqual([l for l in self.check() if l.startswith("NOTICES.md")], [])
 
+    def test_numpys_and_matplotlibs_own_libraries_and_fonts_need_rows(self):
+        packages = {"numpy": ("2.5.4", [H1]), "matplotlib": ("3.11.2", [H2])}
+        deps = ["%s==%s" % (n, v[0]) for n, v in packages.items()]
+        rows = "".join(notice(n, v[0]) for n, v in packages.items())
+        self.heavy(packages=packages, deps=deps, notices=rows)
+        lines = self.check()
+        for words in ("openblas", "lapack", "gcc runtime", "libquadmath", "dejavu", "stix"):
+            self.fails(lines, "NOTICES.md", "notices", '"%s"' % words)
+        extras = (notice("OpenBLAS", "in numpy", "BSD-3-Clause") + notice("LAPACK", "in numpy", "BSD-3-Clause-Open-MPI")
+                  + notice("GCC runtime library", "in numpy", "GPL-3.0-or-later WITH GCC-exception-3.1", used="installed by the creator's setup")
+                  + notice("libquadmath", "in numpy", "LGPL-2.1-or-later") + notice("DejaVu fonts", "in matplotlib", "Bitstream Vera")
+                  + notice("STIX fonts", "in matplotlib", "SIL OFL 1.1"))
+        edit(self.root, "NOTICES.md", NOTICE_HEADER, NOTICE_HEADER + extras)
+        self.assertEqual([l for l in self.check() if l.startswith("NOTICES.md")], [])
+        # the GCC runtime is GPL: its row may not say "bundled"
+        edit(self.root, "NOTICES.md", "installed by the creator's setup", "bundled in the kit", count=99)
+        self.fails(self.check(), "NOTICES.md", "notices", "bundled")
+
+    def test_the_repositorys_own_numpy_and_matplotlib_rows_say_installed_not_bundled(self):
+        text = (REAL / "NOTICES.md").read_text(encoding="utf-8")
+        for words in ("openblas", "gcc runtime", "dejavu", "stix"):
+            row = [line for line in text.split("\n") if line.lower().startswith("| " + words)]
+            self.assertEqual(len(row), 1, words)
+            self.assertIn("installed by the creator's setup", row[0])
+            self.assertNotIn("bundled", row[0].lower())
+
     def test_a_gpl_row_never_says_bundled(self):
         self.heavy(notices=notice("Pillow", "13.0.0", licence="GPL-3.0-or-later", used="bundled in the kit"))
         self.fails(self.check(), "NOTICES.md", "notices", "bundled")

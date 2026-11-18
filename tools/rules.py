@@ -270,6 +270,10 @@ NATIVE_NOTICES = {
     "espeakng-loader": ("espeak-ng",),
     "kokoro-onnx": ("kokoro-82m",),
     "faster-whisper": ("whisper base.en",),
+    # numpy's wheel carries a linear-algebra build and the compiler's runtime libraries; matplotlib's carries its own fonts
+    # (licence files in numpy's dist-info and in matplotlib's mpl-data/fonts/ttf, read 18 November 2026).
+    "numpy": ("openblas", "lapack", "gcc runtime", "libquadmath"),
+    "matplotlib": ("dejavu", "stix"),
 }
 NOTICES_COLUMNS = ("Name", "Version", "Licence", "Home", "How it's used", "Used by")
 GPL_WORDS = ("gpl",)  # a licence naming GPL but not LGPL

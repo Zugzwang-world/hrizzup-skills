@@ -29,7 +29,9 @@ matplotlib draws the chart on its Agg canvas with the kit's fonts, and Pillow pl
 
 The last line it prints is one JSON object: {"ok", "outputs", "checks", "problem"}. Exit codes: 0 made and
 checked; 1 the card failed a Hrizzup limit or quality check (a text too long for its place: it says how far to
-shorten); 2 bad input (a bad spec; a character the font can't draw, emoji included); 3 a missing package or kit file.
+shorten); 2 bad input (a bad spec; a character the font can't draw, emoji and Hindi included: the fonts draw English
+letters only for now; a picture too big); 3 a missing package or kit file. A mistake in this command itself still ends in
+the JSON line, with exit 1.
 """
 
 from __future__ import annotations
@@ -41,6 +43,7 @@ import math
 import os
 import re
 import sys
+from decimal import Decimal
 from pathlib import Path
 
 import hrizzup_media
@@ -55,13 +58,15 @@ MAX_TITLE, MAX_SUBTITLE, MAX_SOURCE = 140, 200, 300
 MAX_LABEL, MAX_VALUE_TEXT, MAX_UNIT, MAX_NAME = 60, 24, 12, 24
 MAX_STEP, STEPS_MIN, STEPS_MAX = 200, 2, 5
 MAX_BARS, MAX_COLUMNS, MAX_POINTS, BANDS_MIN, BANDS_MAX = 12, 8, 24, 2, 8
-MAX_IMAGE_FILE = 25 * 1024 * 1024  # bytes of a picture read
-IMAGE_FORMATS = ("PNG", "JPEG", "MPO", "WEBP")
+STYLE_FILE = KIT / "assets" / "hrizzup.mplstyle"
 DPI = 100  # the chart's canvas: one pixel is 0.72 of a point
 STEP_ROWS = 5  # the steps template's rows
 # Tints of ink over paper, as the share of ink: a scale's bands go from light to dark; bars are TINT_OTHERS beside a highlight.
+# Every tint that is drawn passes the readable-text rule (WCAG 4.5 to 1) against the paper: `shade` raises a share that doesn't.
 TINT_LOW, TINT_HIGH, TINT_OTHERS = 0.14, 0.92, 0.38
+MIN_CONTRAST = 4.5
 MARKER_VALUE = 84  # px, the scale marker's big value
+MARKER_LABEL = 26  # px, the words under it
 LINE = 1.22  # a line of text's height as a multiple of its size
 
 
@@ -111,10 +116,12 @@ def number(value, what):
 
 
 def fmt_number(value):
-    """A number as plain digits: whole numbers without a decimal point, others to two places with no trailing zeros."""
-    if float(value).is_integer():
+    """A number as plain digits, exactly as given and no rounder: a whole number without a decimal point, any other in
+    its shortest exact form (0.001 is "0.001", 0.125 is "0.125"), never an exponent."""
+    if isinstance(value, int) or float(value).is_integer():
         return str(int(value))
-    return ("%.2f" % value).rstrip("0").rstrip(".")
+    text = format(Decimal(repr(float(value))), "f")
+    return text.rstrip("0").rstrip(".") if "." in text else text
 
 
 def value_text(item, unit):
@@ -233,6 +240,8 @@ def validate_spec(spec):
         "subtitle": one_line(spec.get("subtitle"), "\"subtitle\"", MAX_SUBTITLE, required=False),
         "source": one_line(spec.get("source"), "\"source\" (an infographic names its source on the image)", MAX_SOURCE),
     }
+    if template == "stat-card" and spec.get("subtitle") is not None:
+        raise InputError("a stat-card has no subtitle: put it in the note")
     wanted = {"chart-card": ("chart", "image"), "stat-card": ("chart",), "steps-card": ("steps",)}[template]
     for key in ("chart", "image", "steps"):
         if key in spec and key not in wanted:
@@ -259,7 +268,7 @@ def validate_spec(spec):
 def check_paths(args):
     out = os.path.abspath(args.out)
     for given in (args.spec, args.style):
-        if given and os.path.abspath(given) == out:
+        if given and hrizzup_media.same_file(given, out):
             raise InputError("--out would overwrite %s, an input" % given)
     if os.path.splitext(out)[1].lower() not in (".png", ".jpg", ".jpeg", ".webp"):
         raise InputError("--out is a .png, .jpg or .webp file")
@@ -281,9 +290,44 @@ def mix(base, over, share):
     return "#%02X%02X%02X" % tuple(int(round(x + (y - x) * share)) for x, y in zip(a, b))
 
 
-def tint_for(index, count):
-    """The share of ink for band `index` of `count`: light to dark."""
-    return TINT_LOW if count == 1 else TINT_LOW + (TINT_HIGH - TINT_LOW) * index / (count - 1)
+def tint_for(index, count, floor=TINT_LOW):
+    """The share of ink for band `index` of `count`: light to dark, from `floor` (the lightest share that reads)."""
+    low = max(TINT_LOW, floor)
+    high = max(TINT_HIGH, low)
+    return low if count == 1 else low + (high - low) * index / (count - 1)
+
+
+def contrast(first, second):
+    """WCAG's contrast ratio of two #RRGGBB colours (the formula of hrizzup_draw.contrast_ratio), 1 to 21."""
+    def luminance(colour):
+        total = 0.0
+        for weight, index in ((0.2126, 1), (0.7152, 3), (0.0722, 5)):
+            value = int(colour[index:index + 2], 16) / 255
+            total += weight * (value / 12.92 if value <= 0.03928 else ((value + 0.055) / 1.055) ** 2.4)
+        return total
+    high, low = sorted((luminance(first), luminance(second)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def readable_share(paper, ink, share=0.0, against=None):
+    """The smallest share of ink from `share` up (in hundredths) at which the tint of ink over paper has WCAG's
+    4.5 to 1 against `against` (the paper unless said): 1.0, the full ink, when none lighter does."""
+    against = against or paper
+    for hundredth in range(int(round(share * 100)), 100):
+        if contrast(mix(paper, ink, hundredth / 100), against) >= MIN_CONTRAST:
+            return hundredth / 100
+    return 1.0
+
+
+def shade(paper, ink, share, against=None):
+    """A tint of ink over paper that reads against `against` (the paper unless said): the one at `share`, or the
+    lightest above it that has 4.5 to 1, or else the full ink. Lighter greys are for marks that stay readable."""
+    return mix(paper, ink, readable_share(paper, ink, share, against))
+
+
+def accent_on_paper(style):
+    """The accent where it is drawn on the paper (a highlight): the accent if it has 4.5 to 1 there, else the ink."""
+    return style["accent"] if contrast(style["accent"], style["paper"]) >= MIN_CONTRAST else style["ink"]
 
 
 def fit_labels(labels, role, widest, measure, wrap, largest, smallest, max_lines, where, row=None):
@@ -357,16 +401,45 @@ def column_layout(items, unit, width, height, measure, wrap):
     return {"label_size": size, "value_size": value_size, "base": base, "cols": cols}
 
 
+def segment_hits_box(start, end, box, clearance=0.0):
+    """Whether the segment start-end touches the box (left, top, right, bottom), grown by `clearance` pixels."""
+    left, top, right, bottom = box[0] - clearance, box[1] - clearance, box[2] + clearance, box[3] + clearance
+    (x0, y0), (x1, y1) = start, end
+    enter, leave = 0.0, 1.0
+    for delta, behind in ((x1 - x0, x0 - left), (x0 - x1, right - x0), (y1 - y0, y0 - top), (y0 - y1, bottom - y0)):
+        if delta == 0:
+            if behind < 0:
+                return False
+            continue
+        along = -behind / delta  # where on the segment (0 to 1) this edge of the box is crossed
+        if delta > 0:
+            enter = max(enter, along)
+        else:
+            leave = min(leave, along)
+        if enter > leave:
+            return False
+    return True
+
+
+def boxes_overlap(first, second, clearance=0.0):
+    return not (first[2] + clearance <= second[0] or second[2] + clearance <= first[0]
+                or first[3] + clearance <= second[1] or second[3] + clearance <= first[1])
+
+
 def line_layout(items, unit, from_zero, width, height, measure, wrap, marked):
-    """A line through the points, labelled at the first, the last and any highlighted point."""
+    """A line through the points, labelled at the first, the last and any highlighted point. A label sits beside its
+    point (left of the first, right of the last) or above or below it by the line's direction, and is never placed
+    where the line, another label or the edge of the chart is in the way (TooLong when there is no such place)."""
     count = len(items)
     size = 26
     texts = [value_text(i, unit) for i in items]
     value_size = 30
+    gap = 14  # from a point to its label
     labels = [i["label"] for i in items]
     ends = (0, count - 1)
-    pad_x = max([measure(texts[n], "text-bold", value_size) for n in ends] + [measure(labels[n], "text", size) for n in ends]) / 2 + 8
-    left, right = pad_x, width - pad_x
+    widths = [measure(text, "text-bold", value_size) for text in texts]
+    left = max(widths[0] + gap + 8, measure(labels[0], "text", size) / 2 + 8)
+    right = width - max(widths[-1] + gap + 8, measure(labels[-1], "text", size) / 2 + 8)
     label_height = size * LINE
     base = height - label_height - 20
     top_pad = value_size * 1.3 + 14
@@ -389,12 +462,53 @@ def line_layout(items, unit, from_zero, width, height, measure, wrap, marked):
         points.append({"label": item["label"], "x": left + step * number_,
                        "y": base - (item["value"] - low) / (high - low) * (base - top_pad), "value": texts[number_]})
     named = sorted({0, count - 1} | {n for n, i in enumerate(items) if marked and i["label"] in marked})
+    path = [(p["x"], p["y"]) for p in points]
+    height_of = value_size * 1.25
+    taken = []
     for number_ in named:
-        # A value label goes above its point, unless the point is lower than every neighbour (the line rises away
-        # from it): then it goes below, if there is room above the axis, so the line never runs through it.
-        neighbours = [points[n]["y"] for n in (number_ - 1, number_ + 1) if 0 <= n < count]
-        room = base - points[number_]["y"] > value_size * 1.4 + 22
-        points[number_]["below"] = bool(room and all(y < points[number_]["y"] - 4 for y in neighbours))
+        point, wide = points[number_], widths[number_]
+        before = points[number_ - 1]["y"] if number_ > 0 else None
+        after = points[number_ + 1]["y"] if number_ < count - 1 else None
+        # (x of the text's anchor, y of its centre, how it is aligned): the first choice follows the line's direction
+        beside_left = (point["x"] - gap, point["y"], "right", "center")
+        beside_right = (point["x"] + gap, point["y"], "left", "center")
+        above = (point["x"], point["y"] - gap, "center", "bottom")
+        below = (point["x"], point["y"] + gap, "center", "top")
+        upper_left = (point["x"] - gap, point["y"] - gap, "right", "bottom")
+        upper_right = (point["x"] + gap, point["y"] - gap, "left", "bottom")
+        lower_left = (point["x"] - gap, point["y"] + gap, "right", "top")
+        lower_right = (point["x"] + gap, point["y"] + gap, "left", "top")
+        if before is None:
+            choices = [beside_left, upper_left, lower_left]
+        elif after is None:
+            choices = [beside_right, upper_right, lower_right]
+        elif before > point["y"] and after > point["y"]:  # a peak
+            choices = [above, upper_left, upper_right]
+        elif before < point["y"] and after < point["y"]:  # a valley
+            choices = [below, lower_left, lower_right]
+        elif before > after:  # rising through the point: the free corners are upper left and lower right
+            choices = [upper_left, lower_right, above, below]
+        else:  # falling through it: upper right and lower left
+            choices = [upper_right, lower_left, above, below]
+        # if the line is in the way close to the point, try the same corners and sides a little further off
+        for far in (30, 48):
+            choices += [(point["x"], point["y"] - far, "center", "bottom"), (point["x"], point["y"] + far, "center", "top"),
+                        (point["x"] - far, point["y"] - far, "right", "bottom"), (point["x"] + far, point["y"] - far, "left", "bottom"),
+                        (point["x"] - far, point["y"] + far, "right", "top"), (point["x"] + far, point["y"] + far, "left", "top")]
+        for x, y, align, vertical in choices:
+            left_edge = x - wide if align == "right" else (x - wide / 2 if align == "center" else x)
+            top_edge = y - height_of / 2 if vertical == "center" else (y - height_of if vertical == "bottom" else y)
+            box = (left_edge, top_edge, left_edge + wide, top_edge + height_of)
+            if box[0] < 0 or box[2] > width or box[1] < 0 or box[3] > base - 4:
+                continue  # off the chart, or onto the axis
+            if any(segment_hits_box(a, b, box, 3) for a, b in zip(path, path[1:])) or any(boxes_overlap(box, other, 4) for other in taken):
+                continue
+            points[number_]["label_at"] = {"x": x, "y": y, "align": align, "vertical": vertical}
+            taken.append(box)
+            break
+        else:
+            raise TooLong("the line chart: there is no room to label the point %r without the line running through its label: "
+                          "highlight fewer points, or shorten the unit" % point["label"])
     return {"label_size": size, "value_size": value_size, "points": points, "base": base, "shown": shown, "named": named,
             "low": low}
 
@@ -438,8 +552,26 @@ def scale_layout(chart, width, height, measure, wrap):
     marker = chart["marker"]
     placed = None
     if marker is not None:
-        placed = {"y": at(marker["value"]), "value": fmt_number(marker["value"]),
-                  "label": marker["label"], "inside": next(n for n, b in enumerate(bands) if marker["value"] <= b["to"])}
+        y = at(marker["value"])
+        right = bar_x0 - 60  # the callout's right edge, left of the pointer
+        centre = min(max(y, MARKER_VALUE + 4), height - MARKER_VALUE)  # the big value stays inside the chart
+        lines = wrap(marker["label"], "text", MARKER_LABEL, right) if marker["label"] else []
+        if len(lines) > 4 or any(measure(line, "text", MARKER_LABEL) > right for line in lines):
+            raise TooLong("the scale's marker label is too long for its place: shorten it to about %d characters" % max(
+                8, len(marker["label"]) * 4 // max(1, len(lines))))
+        tall = len(lines) * MARKER_LABEL * LINE
+        below_top = centre + MARKER_VALUE * 0.5 + 8
+        above_bottom = centre - MARKER_VALUE * 0.5 - 8
+        label = None
+        if lines and below_top + tall <= height - 2:  # under the value
+            label = {"y": below_top, "vertical": "top"}
+        elif lines and above_bottom - tall >= 2:  # a low marker: over the value instead
+            label = {"y": above_bottom, "vertical": "bottom"}
+        elif lines:
+            raise TooLong("the scale's marker label doesn't fit above or below the value at %s: shorten it" % fmt_number(marker["value"]))
+        placed = {"y": y, "value_y": centre, "value": fmt_number(marker["value"]), "label": marker["label"], "right": right,
+                  "label_lines": lines, "label_at": label,
+                  "inside": next(n for n, b in enumerate(bands) if marker["value"] <= b["to"])}
     return {"size": size, "bar_x0": bar_x0, "bar_x1": bar_x1, "names_x": names_x, "range_x": range_x, "bands": out,
             "marker": placed, "left_col": left_col}
 
@@ -490,7 +622,8 @@ class Chart:
         logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
         self.draw_module, self.style, self.width, self.height = hrizzup_draw, style, width, height
         self.font_manager = font_manager
-        self.figure = Figure(figsize=((width + 0.25) / DPI, (height + 0.25) / DPI), dpi=DPI, facecolor=style["paper"])
+        self.figure = Figure(figsize=((width + 0.25) / DPI, (height + 0.25) / DPI), dpi=DPI, facecolor=style["paper"],
+                             layout="none")  # no layout engine, whatever the kit's style says: every mark is placed in pixels here
         self.canvas = FigureCanvasAgg(self.figure)
         self.axes = self.figure.add_axes([0, 0, 1, 1])
         self.axes.axis("off")
@@ -504,8 +637,10 @@ class Chart:
 
     def text(self, x, y, text, role, size, colour, align="left", valign="center", spacing=1.2):
         self.draw_module.check_glyphs(text, role, self.style, "the chart's text %r" % text[:30])
+        # A string is only ever text: "$5 to $7" is not maths, and no TeX is run (parse_math and usetex off, here
+        # and in the drawing's own settings, so a creator's matplotlibrc can't turn them on).
         self.axes.text(x, y, text, fontproperties=self.properties(role, size), color=colour, ha=align, va=valign,
-                       linespacing=spacing, multialignment=align)
+                       linespacing=spacing, multialignment=align, parse_math=False, usetex=False)
 
     def rectangle(self, x0, y0, x1, y1, colour, edge=None, edge_width=0):
         from matplotlib.patches import Rectangle
@@ -573,11 +708,11 @@ def chart_texts(chart):
 def draw_bar(chart, spec, style, hrizzup_draw, width, height):
     measure, wrap = measurer(hrizzup_draw, style)
     layout = bar_layout(spec["data"], spec["unit"], width, height, measure, wrap)
-    ink, paper, accent = style["ink"], style["paper"], style["accent"]
+    ink, paper = style["ink"], style["paper"]
     marked = set(spec["highlight"] or [])
-    others = mix(paper, ink, TINT_OTHERS if marked else 0.86)
+    others = shade(paper, ink, TINT_OTHERS if marked else 0.86)
     for row in layout["rows"]:
-        colour = (accent if accent != ink else ink) if row["label"] in marked else others
+        colour = accent_on_paper(style) if row["label"] in marked else others
         chart.rectangle(row["x0"], row["y0"], row["x1"], row["y1"], colour)
         chart.text(layout["label_right"], row["centre"], "\n".join(row["lines"]), "text", layout["label_size"], ink, align="right")
         chart.text(row["x1"] + 14, row["centre"], row["value"], "text-bold", layout["value_size"], ink)
@@ -587,11 +722,11 @@ def draw_bar(chart, spec, style, hrizzup_draw, width, height):
 def draw_column(chart, spec, style, hrizzup_draw, width, height):
     measure, wrap = measurer(hrizzup_draw, style)
     layout = column_layout(spec["data"], spec["unit"], width, height, measure, wrap)
-    ink, paper, accent = style["ink"], style["paper"], style["accent"]
+    ink, paper = style["ink"], style["paper"]
     marked = set(spec["highlight"] or [])
-    others = mix(paper, ink, TINT_OTHERS if marked else 0.86)
+    others = shade(paper, ink, TINT_OTHERS if marked else 0.86)
     for col in layout["cols"]:
-        colour = (accent if accent != ink else ink) if col["label"] in marked else others
+        colour = accent_on_paper(style) if col["label"] in marked else others
         chart.rectangle(col["x0"], col["y0"], col["x1"], col["y1"], colour)
         chart.text(col["centre"], col["y0"] - 10, col["value"], "text-bold", layout["value_size"], ink, align="center", valign="bottom")
         chart.text(col["centre"], layout["base"] + 14, "\n".join(col["lines"]), "text", layout["label_size"], ink, align="center", valign="top")
@@ -601,38 +736,38 @@ def draw_column(chart, spec, style, hrizzup_draw, width, height):
 def draw_line(chart, spec, style, hrizzup_draw, width, height):
     measure, wrap = measurer(hrizzup_draw, style)
     layout = line_layout(spec["data"], spec["unit"], spec["from_zero"], width, height, measure, wrap, spec["highlight"])
-    ink, paper, accent = style["ink"], style["paper"], style["accent"]
-    stroke = accent if accent != ink else ink
+    ink, paper = style["ink"], style["paper"]
+    stroke = accent_on_paper(style)
     points = layout["points"]
-    chart.line([(0, layout["base"]), (width, layout["base"])], mix(paper, ink, 0.5), 2)
+    chart.line([(0, layout["base"]), (width, layout["base"])], shade(paper, ink, 0.5), 2)
     chart.line([(p["x"], p["y"]) for p in points], stroke, 6, cap="round")
     for number_ in layout["named"]:
         point = points[number_]
         chart.dot(point["x"], point["y"], 9, stroke, ring=paper)
-        if point["below"]:
-            chart.text(point["x"], point["y"] + 18, point["value"], "text-bold", layout["value_size"], ink, align="center", valign="top")
-        else:
-            chart.text(point["x"], point["y"] - 18, point["value"], "text-bold", layout["value_size"], ink, align="center", valign="bottom")
+        at = point["label_at"]  # beside the point, or above or below it, where the line is not
+        chart.text(at["x"], at["y"], point["value"], "text-bold", layout["value_size"], ink, align=at["align"], valign=at["vertical"])
     for number_ in layout["shown"]:
         chart.text(points[number_]["x"], layout["base"] + 14, points[number_]["label"], "text", layout["label_size"], ink,
                    align="center", valign="top")
     if not spec["from_zero"]:
-        chart.text(width, layout["base"] - 8, "The axis does not start at zero", "text", 22, mix(paper, ink, 0.7), align="right", valign="bottom")
+        chart.text(width, layout["base"] - 8, "The axis does not start at zero", "text", 22, shade(paper, ink, 0.7), align="right", valign="bottom")
 
 
 def draw_scale(chart, spec, style, hrizzup_draw, width, height):
     measure, wrap = measurer(hrizzup_draw, style)
     layout = scale_layout(spec, width, height, measure, wrap)
-    ink, paper, accent = style["ink"], style["paper"], style["accent"]
+    ink, paper = style["ink"], style["paper"]
+    highlight = accent_on_paper(style)
+    floor = readable_share(paper, ink)  # the lightest share of ink that reads on the paper: the ramp starts there
     marker = layout["marker"]
     for number_, band in enumerate(layout["bands"]):
-        colour = mix(paper, ink, band["tint"])
-        if marker is not None and accent != ink and marker["inside"] == number_:
-            colour = accent
+        colour = shade(paper, ink, tint_for(number_, len(layout["bands"]), floor))
+        if marker is not None and highlight != ink and marker["inside"] == number_:
+            colour = highlight
         chart.rectangle(layout["bar_x0"], band["y0"], layout["bar_x1"], band["y1"], colour, edge=paper, edge_width=3)
         middle = (band["y0"] + band["y1"]) / 2
         chart.text(layout["names_x"], middle, band["name"], "text-bold", layout["size"], ink)
-        chart.text(layout["range_x"], middle, band["range"], "text", layout["size"], mix(paper, ink, 0.75))
+        chart.text(layout["range_x"], middle, band["range"], "text", layout["size"], shade(paper, ink, 0.75))
     if marker is not None:
         y = marker["y"]
         end = layout["bar_x1"] + 6
@@ -640,52 +775,53 @@ def draw_scale(chart, spec, style, hrizzup_draw, width, height):
         chart.line([(tip, y), (end, y)], paper, 11)  # a halo, so it shows on the darkest band
         chart.line([(tip, y), (end, y)], ink, 5)
         chart.polygon([(tip - 30, y - 17), (tip - 30, y + 17), (tip, y)], ink)
-        right = layout["bar_x0"] - 60
-        centre = min(max(y, MARKER_VALUE + 4), height - MARKER_VALUE)  # the big value stays inside the chart
-        chart.text(right, centre, marker["value"], "display", MARKER_VALUE, ink, align="right")
-        if marker["label"]:
-            lines = wrap(marker["label"], "text", 26, right)
-            if len(lines) > 4:
-                raise TooLong("the scale's marker label is too long: shorten it to about %d characters" % (len(marker["label"]) * 4 // len(lines)))
-            chart.text(right, centre + MARKER_VALUE * 0.5 + 8, "\n".join(lines), "text", 26, ink, align="right", valign="top")
+        chart.text(marker["right"], marker["value_y"], marker["value"], "display", MARKER_VALUE, ink, align="right")
+        if marker["label_at"] is not None:
+            chart.text(marker["right"], marker["label_at"]["y"], "\n".join(marker["label_lines"]), "text", MARKER_LABEL, ink,
+                       align="right", valign=marker["label_at"]["vertical"])
 
 
 DRAWERS = {"bar": draw_bar, "column": draw_column, "line": draw_line, "scale": draw_scale}
 
 
 def draw_chart(spec, style, hrizzup_draw, width, height):
-    """The chart as a Pillow image of exactly width x height."""
+    """The chart as a Pillow image of exactly width x height, drawn with matplotlib's own defaults plus the kit's
+    style (`assets/hrizzup.mplstyle`), whatever a matplotlibrc on this machine says (usetex and the like)."""
     check_chart_text(hrizzup_draw, style, spec)
-    chart = Chart(hrizzup_draw, style, width, height)
-    DRAWERS[spec["type"]](chart, spec, style, hrizzup_draw, width, height)
-    return chart.image()
+    import matplotlib
+    import matplotlib.style
+    if not STYLE_FILE.is_file():
+        raise hrizzup_draw.DrawError("the kit's assets/hrizzup.mplstyle isn't there: get the kit again", 3)
+    with matplotlib.rc_context(matplotlib.rcParamsDefault):
+        matplotlib.style.use(str(STYLE_FILE))
+        chart = Chart(hrizzup_draw, style, width, height)
+        DRAWERS[spec["type"]](chart, spec, style, hrizzup_draw, width, height)
+        return chart.image()
 
 
-def place_picture(canvas, path, box, paper):
-    """Your own chart, centred in the chart's place at no more than its own size (shrunk to fit, never enlarged)."""
-    from PIL import Image, ImageOps, UnidentifiedImageError
-    try:
-        size = os.path.getsize(path)
-        if size > MAX_IMAGE_FILE:
-            raise InputError("the image %s is %d MiB; at most %d MiB" % (path, size // (1024 * 1024), MAX_IMAGE_FILE // (1024 * 1024)))
-        picture = Image.open(path)
-        picture.load()
-    except (OSError, UnidentifiedImageError, Image.DecompressionBombError, ValueError) as error:
-        raise InputError("can't read the image %s: %s" % (path, error))
-    if picture.format not in IMAGE_FORMATS:
-        raise InputError("the image %s is a %s; use a PNG, JPEG or WebP" % (path, picture.format))
-    picture = ImageOps.exif_transpose(picture).convert("RGBA")
+def place_picture(hrizzup_draw, canvas, path, box, paper):
+    """Your own chart, centred in the chart's place at no more than its own size (shrunk to fit, never enlarged),
+    its transparency laid over the paper. The picture must be one `hrizzup_draw.load_picture` accepts."""
+    from PIL import Image
+    picture = hrizzup_draw.flatten(hrizzup_draw.load_picture(path), paper)
     left, top, right, bottom = box
     scale = min(1.0, (right - left) / picture.width, (bottom - top) / picture.height)
     if scale < 1.0:
         picture = picture.resize((max(1, int(picture.width * scale)), max(1, int(picture.height * scale))), Image.Resampling.LANCZOS)
     x = int(left + (right - left - picture.width) / 2)
     y = int(top + (bottom - top - picture.height) / 2)
-    canvas.paste(picture, (x, y), picture)
+    canvas.paste(picture, (x, y))
+
+
+class Parser(argparse.ArgumentParser):
+    """A command line that is wrong is bad input (exit 2, with the JSON line), not argparse's own exit."""
+
+    def error(self, message):
+        raise InputError(message)
 
 
 def make_parser():
-    parser = argparse.ArgumentParser(
+    parser = Parser(
         prog="infographic.py",
         description="Make an infographic (1080 x 1350 or 1080 x 1080): a chart, one big number, or a few steps, from a JSON spec.",
         epilog="Example: uv run scripts/infographic.py --spec spec.json --size 1080x1350 --out infographic.png",
@@ -709,8 +845,23 @@ def read_spec(path):
 
 
 def main(argv=None):
-    args = make_parser().parse_args(argv)
+    """Make the card; whatever goes wrong, the last line printed is the JSON line."""
     try:
+        return make(argv)
+    except ImportError as error:  # a package turned out to be missing deep inside a call
+        message = "a Python package or module is missing (%s): get the kit again and install its packages" % error
+        log("infographic.py: " + message)
+        return finish(False, [], [], message, 3)
+    except Exception as error:  # the last resort: a mistake in this command, never a bare traceback
+        message = "infographic.py failed unexpectedly (%s: %s): this is a mistake in the kit, so tell your owner" % (
+            type(error).__name__, error)
+        log("infographic.py: " + message)
+        return finish(False, [], [], message, 1)
+
+
+def make(argv=None):
+    try:
+        args = make_parser().parse_args(argv)
         size, out = parse_size(args.size), check_paths(args)
         spec = validate_spec(read_spec(args.spec))
     except InputError as error:
@@ -731,10 +882,8 @@ def main(argv=None):
         style = hrizzup_draw.load_style(args.style)
         template = hrizzup_draw.load_template(TEMPLATES / (spec["template"] + ".json"))
         texts = {"title": spec["title"], "source": spec["source"]}
-        if spec["subtitle"] and "subtitle" in [t["slot"] for t in template["texts"]]:
+        if spec["subtitle"]:
             texts["subtitle"] = spec["subtitle"]
-        elif spec["subtitle"]:
-            log("infographic.py: the %s has no subtitle; it is left out" % spec["template"])
         rules, groups = [], []
         if spec["template"] == "stat-card":
             stat = spec["chart"]
@@ -752,9 +901,9 @@ def main(argv=None):
             pixels = (int(round(box[0] * size[0])), int(round(box[1] * size[1])), int(round(box[2] * size[0])), int(round(box[3] * size[1])))
             if "image" in spec:
                 given = spec["image"] if os.path.isabs(spec["image"]) else os.path.join(os.path.dirname(os.path.abspath(args.spec)), spec["image"])
-                if os.path.abspath(given) == out:
-                    raise InputError("--out would overwrite the image %s" % given)
-                place_picture(canvas, given, pixels, style["paper"])
+                if hrizzup_media.same_file(given, out):
+                    raise InputError("--out would overwrite the image %s, an input" % given)
+                place_picture(hrizzup_draw, canvas, given, pixels, style["paper"])
             else:
                 canvas.paste(draw_chart(spec["chart"], style, hrizzup_draw, pixels[2] - pixels[0], pixels[3] - pixels[1]), pixels[:2])
         elif spec["template"] == "steps-card":
