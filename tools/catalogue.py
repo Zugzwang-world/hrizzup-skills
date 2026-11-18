@@ -1589,8 +1589,11 @@ def check_workflow(rel, text, P):
     # string): the words themselves may not appear anywhere but in a whole-line comment.
     live = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
     decoded = YAML_ESCAPE.sub(unescape, live)
+    # YAML folds a quoted or plain scalar over lines (and `\\` then a new line joins a quoted one), so the words
+    # can be split: look again at the text with everything but a-z and `_` taken out, lower-cased.
+    squashed = [re.sub(r"[^a-z_]", "", version.lower()) for version in (live, decoded)]
     for word in rules.FORBIDDEN_TRIGGERS:
-        if word in live or word in decoded:
+        if word in live or word in decoded or any(word in version for version in squashed):
             P.add(rel, "workflow", "%s appears outside a comment: that trigger runs with the repository's keys on an "
                   "outsider's pull request, and no spelling of it is allowed" % word)
     for action in workflow_actions(text):

@@ -1497,6 +1497,27 @@ class Workflows(Repo):
                 found = " ".join(self.problems(text))
                 self.assertTrue("pull_request_target" in found or "workflow_run" in found, found)
 
+    def test_a_name_split_over_lines_is_still_caught(self):
+        quote, back = chr(34), chr(92)
+        head = "on:\n  pull_request:\n  workflow_dispatch:\n"
+        forms = {
+            "backslash then a new line in a double-quoted key": "on:\n  " + quote + "pull_request_" + back + "\n    target" + quote + ": null\n",
+            "a folded double-quoted key": "on:\n  " + quote + "pull_request_\n    target" + quote + ": null\n",
+            "a folded plain scalar in a list": "on: [push, pull_request_\n    target]\n",
+            "a folded single-quoted key": "on:\n  'workflow_\n    run':\n    workflows: [x]\n",
+            "folded after an escape": "on:\n  " + quote + "workflow" + back + "x5f\n    run" + quote + ": null\n",
+            "split by white space and a comment-free blank": "on: [push, workflow_\n\n  run]\n",
+        }
+        for label, replacement in forms.items():
+            with self.subTest(label):
+                found = " ".join(self.problems(GOOD_WORKFLOW.replace(head, replacement)))
+                self.assertTrue("pull_request_target appears" in found or "workflow_run appears" in found, found)
+
+    def test_a_shell_continuation_in_a_run_block_is_fine(self):
+        block = "      - run: |\n          echo one " + chr(92) + "\n            two\n          echo a_pull_request_ and b\n"
+        text = GOOD_WORKFLOW.replace("      - run: echo ", block + "      - run: echo ", 1)
+        self.assertEqual(self.problems(text), [])
+
     def test_a_whole_line_comment_may_name_them(self):
         text = "# never pull_request_target or workflow_run here\n" + GOOD_WORKFLOW
         self.assertEqual(self.problems(text), [])
