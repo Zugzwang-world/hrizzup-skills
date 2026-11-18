@@ -242,6 +242,64 @@ class Mp4(unittest.TestCase):
                 media.inspect(audio)
 
 
+class InputPictures(unittest.TestCase):
+    """The pictures a command reads (a creator's own): refused from the header's size, before any pixel is decoded."""
+
+    def test_the_limits(self):
+        self.assertEqual(media.PICTURE_INPUT_MAX_PIXELS, 40_000_000)
+        self.assertEqual(media.PICTURE_INPUT_MAX_SIDE, 8192)
+        self.assertEqual(media.input_picture_problems(1080, 1350), [])
+        self.assertEqual(media.input_picture_problems(8192, 4880), [])  # 40.0 megapixels and 8,192 a side: allowed
+        self.assertEqual(media.input_picture_problems(6324, 6324), [])
+
+    def test_too_many_pixels_or_too_long_a_side(self):
+        self.assertTrue(any("megapixels" in p for p in media.input_picture_problems(7000, 7000)))
+        self.assertTrue(any("a side" in p for p in media.input_picture_problems(9000, 10)))
+        self.assertTrue(any("a side" in p for p in media.input_picture_problems(10, 8193)))
+        both = media.input_picture_problems(12000, 12000)
+        self.assertEqual(len(both), 2)
+        self.assertTrue(media.input_picture_problems(40_000_001, 1))
+
+
+class SameFile(unittest.TestCase):
+    """A command never overwrites an input, however its path is spelled."""
+
+    def setUp(self):
+        self.folder = tempfile.mkdtemp(prefix="same-file-")
+        self.addCleanup(__import__("shutil").rmtree, self.folder, True)
+        self.path = os.path.join(self.folder, "Spec.json")
+        with open(self.path, "w", encoding="utf-8") as f:
+            f.write("{}\n")
+
+    def test_the_same_path_even_when_nothing_is_there(self):
+        self.assertTrue(media.same_file(self.path, self.path))
+        missing = os.path.join(self.folder, "none.png")
+        self.assertTrue(media.same_file(missing, missing))  # the same name is enough
+        self.assertFalse(media.same_file(missing, self.path))
+
+    def test_another_spelling_of_the_same_file(self):
+        self.assertTrue(media.same_file(self.path, os.path.join(self.folder, "sub", "..", "Spec.json")))
+        self.assertFalse(media.same_file(self.path, os.path.join(self.folder, "Other.json")))
+
+    def test_a_symbolic_link_and_a_hard_link(self):
+        link = os.path.join(self.folder, "link.png")
+        hard = os.path.join(self.folder, "hard.png")
+        try:
+            os.symlink(self.path, link)
+            os.link(self.path, hard)
+        except (OSError, NotImplementedError):
+            self.skipTest("this file system has no links")
+        self.assertTrue(media.same_file(self.path, link))
+        self.assertTrue(media.same_file(link, self.path))
+        self.assertTrue(media.same_file(self.path, hard))
+
+    def test_another_case_on_a_disk_that_ignores_case(self):
+        other = os.path.join(self.folder, "spec.JSON")
+        if not os.path.exists(other):
+            self.skipTest("this disk tells upper and lower case apart")
+        self.assertTrue(media.same_file(self.path, other))
+
+
 class Limits(unittest.TestCase):
     def video(self, **changes):
         base = dict(kind="mp4", bytes=1_000_000, width=1080, height=1920, seconds=45.0, brand="isom",

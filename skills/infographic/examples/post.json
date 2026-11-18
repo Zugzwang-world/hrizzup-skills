@@ -1,0 +1,15 @@
+{
+  "storyId": "01a199e9-d180-75ec-8a81-134dd403419a",
+  "kind": "image",
+  "format": "infographic",
+  "body": "India's National Air Quality Index runs from 0 to 500 in six bands, from Good (0 to 50) to Severe (401 to 500). The 450 reading in the example story sits in the top band, Severe, 50 points below the top of the scale. The bands are from the Central Pollution Control Board's Air Quality Portal and the Press Information Bureau's backgrounder of 7 September 2026; the 450 reading is the example story's, not a real measurement. Not confirmed: which monitoring stations passed 450 first.",
+  "sources": [
+    "https://airquality.cpcb.gov.in/ccr/",
+    "https://static.pib.gov.in/WriteReadData/specificdocs/documents/2026/sep/doc_9816_20260907_20291701.pdf",
+    "https://example.com/sources/delhi-air-quality-monday-morning"
+  ],
+  "media": {
+    "file": "infographic.png",
+    "description": "An infographic titled \"Where 450 sits on India's air-quality scale\", with the subtitle \"The National Air Quality Index runs from 0 to 500, in six bands\". A vertical scale of six grey bars stacked in proportion, light grey at the bottom and near-black at the top, each named with its range: Good 0–50, Satisfactory 51–100, Moderate 101–200, Poor 201–300, Very Poor 301–400 and Severe 401–500. A black marker points at the top band, Severe, beside the large number 450 and the words \"The example story's reading\". Below the scale: \"Bands: Central Pollution Control Board, Air Quality Portal (airquality.cpcb.gov.in). The 450 reading is from Hrizzup's example story.\" The bottom line reads \"Illustrative sample · hrizzup-skills\"."
+  }
+}

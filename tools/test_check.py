@@ -153,7 +153,7 @@ Once a day.
 """ % json.dumps(rules.STYLE_DEFAULT, indent=2)
 
 EXAMPLES_README = (
-    rules.EXAMPLE_FIRST_LINE + "\n\nInput: the example story's brief. Command, as run: `python3 scripts/hi.py --name World`.\n"
+    rules.EXAMPLE_FIRST_LINE + "\n" + rules.EXAMPLE_SOURCES_ALL_EXAMPLE + "\n\nInput: the example story's brief. Command, as run: `python3 scripts/hi.py --name World`.\n"
     "Made on " + rules.EXAMPLE_MACHINE + ", on 18 November 2026, with Python 3.12.\n\nFiles: `post.json`.\n"
 )
 
@@ -809,6 +809,11 @@ def notice(name, version, licence="MIT", used="installed by the creator's setup"
     return "| %s | %s | %s | https://example.org | %s | %s |\n" % (name, version, licence, used, by)
 
 
+def native_rows(package):
+    """The rows a package's wheel needs besides its own: one for each of `rules.NATIVE_NOTICES`' words, named by them."""
+    return "".join(notice(words, "in the wheel", "MIT") for words in rules.NATIVE_NOTICES.get(package, ()))
+
+
 class Locks(Repo):
     def heavy(self, packages=PILLOW, deps=("pillow==13.0.0",), notices=None, name="draw.py"):
         """A script with packages, its lock, its requirements file and its NOTICES rows (safe to call twice)."""
@@ -816,7 +821,7 @@ class Locks(Repo):
         put(self.root, base, script_text(list(deps), name=name))
         put(self.root, base + ".lock", lock_text(packages))
         put(self.root, base[:-3] + ".requirements.txt", requirements_text(packages))
-        rows = notices if notices is not None else "".join(notice(n, v[0]) for n, v in packages.items())
+        rows = notices if notices is not None else "".join(notice(n, v[0]) + native_rows(n) for n, v in packages.items())
         put(self.root, "NOTICES.md", notices_without_rows() + rows)
         need = "The first run downloads nothing."
         no_uv = " On a machine without uv: `python3.12 -m venv .venv`, then `.venv/bin/python -m pip install --require-hashes -r scripts/%s.requirements.txt`." % name[:-3]
@@ -920,7 +925,7 @@ class Locks(Repo):
         self.fails(self.check(), "NOTICES.md", "notices", "pillow 13.0.0")
 
     def test_a_row_is_found_by_normalised_name(self):
-        self.heavy(notices=notice("PILLOW", "13.0.0"))
+        self.heavy(notices=notice("PILLOW", "13.0.0") + native_rows("pillow"))
         self.assertEqual([l for l in self.check() if l.startswith("NOTICES.md")], [])
 
     def test_native_extras_need_their_own_rows(self):
@@ -937,6 +942,42 @@ class Locks(Repo):
                   + notice("Whisper base.en (CTranslate2)", "revision 3d3d5dee", "MIT"))
         edit(self.root, "NOTICES.md", NOTICE_HEADER, NOTICE_HEADER + extras)
         self.assertEqual([l for l in self.check() if l.startswith("NOTICES.md")], [])
+
+    def test_what_the_wheels_of_numpy_matplotlib_and_pillow_carry_needs_rows(self):
+        packages = {"numpy": ("2.5.4", [H1]), "matplotlib": ("3.11.2", [H2]), "pillow": ("13.0.0", [H3])}
+        deps = ["%s==%s" % (n, v[0]) for n, v in packages.items()]
+        own = "".join(notice(n, v[0]) for n, v in packages.items())
+        self.heavy(packages=packages, deps=deps, notices=own)
+        lines = self.check()
+        for package in packages:
+            for words in rules.NATIVE_NOTICES[package]:
+                self.fails(lines, "NOTICES.md", "notices", '"%s"' % words)
+        self.heavy(packages=packages, deps=deps, notices=own + "".join(native_rows(n) for n in packages))
+        self.assertEqual([l for l in self.check() if l.startswith("NOTICES.md")], [])
+        asked = sum(rules.NATIVE_NOTICES.values(), ())
+        for words in ("freetype pillow", "harfbuzz pillow", "libjpeg pillow", "libpng pillow", "libwebp pillow", "zlib pillow",
+                      "lcms2 pillow", "libtiff pillow", "openjpeg pillow", "libavif pillow", "brotli pillow", "xz pillow",
+                      "libxcb pillow", "freetype matplotlib", "bakoma", "colorbrewer", "openblas", "gcc runtime", "dejavu", "stix"):
+            self.assertIn(words, asked)  # asked for by rules.py
+        # a row for the GCC runtime or libimagequant is GPL: it may not say "bundled"
+        gpl = own + "".join(native_rows(n) for n in packages if n != "numpy") + "".join(
+            notice(words, "in the wheel", "GPL-3.0-or-later WITH GCC-exception-3.1", used="bundled in the kit") for words in rules.NATIVE_NOTICES["numpy"])
+        self.heavy(packages=packages, deps=deps, notices=gpl)
+        self.fails(self.check(), "NOTICES.md", "notices", "bundled")
+
+    def test_the_repositorys_own_rows_for_wheels_say_installed_not_bundled(self):
+        text = (REAL / "NOTICES.md").read_text(encoding="utf-8")
+        rows = [line for line in text.split("\n") if line.startswith("| ")]
+        names = [line.split("|")[1].strip().lower() for line in rows]
+        for package in ("numpy", "matplotlib", "pillow"):
+            for words in rules.NATIVE_NOTICES[package]:
+                found = [row for row, name in zip(rows, names) if all(word in name for word in words.split())]
+                self.assertTrue(found, words)
+                for row in found:
+                    self.assertIn("installed by the creator's setup", row.lower(), words)
+                    self.assertNotIn("bundled", row.lower(), words)
+        for words in ("gcc runtime", "libimagequant"):  # the GPL ones, by name
+            self.assertTrue([r for r, n in zip(rows, names) if words in n and "gpl-3.0" in r.lower()], words)
 
     def test_a_gpl_row_never_says_bundled(self):
         self.heavy(notices=notice("Pillow", "13.0.0", licence="GPL-3.0-or-later", used="bundled in the kit"))
@@ -978,12 +1019,49 @@ class Examples(Repo):
         self.fails(self.check(), path, "examples", "first line")
         put(self.root, path, EXAMPLES_README.replace(rules.EXAMPLE_MACHINE, "a computer"))
         self.fails(self.check(), path, "examples", "machine")
+        put(self.root, path, EXAMPLES_README.replace("Illustrative: made from", "Made from"))
+        self.fails(self.check(), path, "examples", "first line")
+        # the old one-line wording ("...; its sources are example addresses.") is no longer the first line
+        put(self.root, path, EXAMPLES_README.replace(rules.EXAMPLE_FIRST_LINE, rules.EXAMPLE_FIRST_LINE[:-1] +
+                                                      "; its sources are example addresses."))
+        self.fails(self.check(), path, "examples", "first line")
         put(self.root, path, EXAMPLES_README.replace("`post.json`", "the post"))
         self.fails(self.check(), path, "examples", "doesn't name post.json")
         put(self.root, path, EXAMPLES_README.replace("hi.py", "it"))
         self.fails(self.check(), path, "examples", "hi.py")
         os.remove(Path(self.root) / path)
         self.fails(self.check(), path, "examples", "missing")
+
+    def test_the_second_line_says_which_sources_are_real(self):
+        path = "skills/hello/examples/README.md"
+        real = "https://www.iana.org/domains/example"
+        # all example addresses: the fixed sentence, and nothing else is accepted (a post with no sources counts)
+        put(self.root, path, EXAMPLES_README.replace(rules.EXAMPLE_SOURCES_ALL_EXAMPLE, "Sources: example addresses."))
+        self.fails(self.check(), path, "examples", "all example addresses")
+        put(self.root, path, EXAMPLES_README.replace(rules.EXAMPLE_SOURCES_ALL_EXAMPLE + "\n", ""))
+        self.fails(self.check(), path, "examples", "second line")
+        for host in ("example.org", "docs.example.net", "EXAMPLE.COM"):
+            with self.subTest(host):
+                self.post(sources=["https://%s/a" % host])
+                put(self.root, path, EXAMPLES_README)
+                self.assertEqual([l for l in self.check() if "second line" in l], [])
+        self.post(sources=[])
+        self.assertEqual([l for l in self.check() if "second line" in l], [])
+        # a real source: the fixed sentence is now untrue, and the line must name the address in full
+        self.post(sources=["https://example.com/a", real])
+        self.fails(self.check(), path, "examples", "isn't an example address")
+        for lookalike in ("https://example.com.evil.test/a", "https://notexample.com/a", "https://example.com" + chr(64) + "evil.test/a"):
+            with self.subTest(lookalike):
+                self.post(sources=[lookalike])
+                self.fails(self.check(), path, "examples", "isn't an example address")
+        self.post(sources=["https://example.com/a", real])
+        named = EXAMPLES_README.replace(rules.EXAMPLE_SOURCES_ALL_EXAMPLE, "Sources: the post's real source is %s." % real)
+        put(self.root, path, named)
+        self.assertEqual([l for l in self.check() if "second line" in l], [])
+        put(self.root, path, EXAMPLES_README.replace(rules.EXAMPLE_SOURCES_ALL_EXAMPLE, "Sources: the post's real source is the IANA page."))
+        self.fails(self.check(), path, "examples", "doesn't name the real source")
+        put(self.root, path, named.replace("Sources: the post's", "Sources: its"))
+        self.fails(self.check(), path, "examples", "isn't an example address")
 
     def test_a_missing_post(self):
         os.remove(Path(self.root) / "skills/hello/examples/post.json")
@@ -1147,10 +1225,13 @@ class Templates(Repo):
             "keys": dict(base, extra=1), "font": dict(base, font="comic"), "box": dict(base, box=[0.9, 0, 0.1, 1]),
             "min": dict(base, min=100, max=50), "lines": dict(base, lines=0), "align": dict(base, align="top"),
             "on": dict(base, on="sky"), "case": dict(base, case="lower"), "slot": dict(base, slot="Bad Slot"),
+            "valign": dict(base, valign="centre"),
         }
         for words, text in cases.items():
             with self.subTest(words):
                 self.assertTrue(self.problems(texts=[text]), words)
+        for valign in ("top", "middle", "bottom"):  # the one optional key (added at M3)
+            self.assertEqual(self.problems(texts=[dict(base, valign=valign)]), [], valign)
         self.assertTrue(self.problems(texts=[base, dict(base)]))  # the same slot twice
         self.assertIn("no picture", " ".join(self.problems(picture=None, texts=[dict(base, on="picture")])))
 

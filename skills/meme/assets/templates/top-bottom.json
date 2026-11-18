@@ -1,0 +1,11 @@
+{
+  "id": "top-bottom",
+  "sizes": [[1080, 1080], [1080, 1350]],
+  "background": "paper",
+  "picture": {"box": [0, 0, 1, 0.935], "required": false},
+  "texts": [
+    {"slot": "text", "box": [0.05, 0.03, 0.95, 0.32], "font": "display", "max": 120, "min": 44, "lines": 3, "align": "center", "on": "picture", "case": "upper", "valign": "top"},
+    {"slot": "text2", "box": [0.05, 0.62, 0.95, 0.91], "font": "display", "max": 120, "min": 44, "lines": 3, "align": "center", "on": "picture", "case": "upper", "valign": "bottom"}
+  ],
+  "signature": {"box": [0.06, 0.947, 0.94, 0.99], "align": "right"}
+}

@@ -1,0 +1,14 @@
+{
+  "id": "stat-card",
+  "sizes": [[1080, 1350], [1080, 1080]],
+  "background": "accent",
+  "picture": null,
+  "texts": [
+    {"slot": "title", "box": [0.09, 0.07, 0.91, 0.22], "font": "text-bold", "max": 52, "min": 28, "lines": 3, "align": "left", "on": "accent", "case": "as-is", "valign": "top"},
+    {"slot": "value", "box": [0.06, 0.27, 0.94, 0.55], "font": "display", "max": 400, "min": 120, "lines": 1, "align": "center", "on": "accent", "case": "as-is", "valign": "middle"},
+    {"slot": "label", "box": [0.09, 0.56, 0.91, 0.69], "font": "text-bold", "max": 52, "min": 28, "lines": 2, "align": "center", "on": "accent", "case": "as-is", "valign": "top"},
+    {"slot": "note", "box": [0.09, 0.7, 0.91, 0.82], "font": "text", "max": 34, "min": 20, "lines": 3, "align": "center", "on": "accent", "case": "as-is", "valign": "top"},
+    {"slot": "source", "box": [0.09, 0.855, 0.91, 0.93], "font": "text", "max": 26, "min": 16, "lines": 3, "align": "left", "on": "accent", "case": "as-is", "valign": "top"}
+  ],
+  "signature": {"box": [0.09, 0.945, 0.91, 0.985], "align": "right"}
+}

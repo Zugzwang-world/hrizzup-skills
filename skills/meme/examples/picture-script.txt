@@ -1,0 +1,91 @@
+# /// script
+# requires-python = ">=3.12,<3.14"
+# dependencies = ["pillow==13.0.0"]
+# [tool.uv]
+# exclude-newer = "2026-11-15T00:00:00Z"
+# ///
+"""Draws the meme sample's picture (usage: uv run make_picture.py picture.png): three small school buildings under a hazy sky. The left one wears an open
+laptop on its roof, like a hat, with its door shut; the other two have their doors open. No text, no people, no
+photograph: every shape is a rectangle, polygon or ellipse drawn here."""
+import sys
+from PIL import Image, ImageDraw
+
+W, H, K = 1600, 1212, 2  # the picture, and how much it is drawn larger before it is shrunk smooth
+out = sys.argv[1]
+img = Image.new("RGB", (W * K, H * K))
+d = ImageDraw.Draw(img)
+
+
+def s(*values):
+    return [v * K for v in values]
+
+
+def lerp(a, b, t):
+    return tuple(int(round(x + (y - x) * t)) for x, y in zip(a, b))
+
+
+# sky: warm grey haze, lighter toward the horizon
+horizon = 700
+for y in range(horizon * K):
+    d.line([(0, y), (W * K, y)], fill=lerp((196, 192, 180), (236, 228, 208), y / (horizon * K)))
+# faint far buildings, almost lost in the haze
+for x, w, h in ((40, 120, 150), (190, 90, 110), (330, 140, 190), (1180, 110, 140), (1310, 150, 200), (1480, 100, 120)):
+    d.rectangle(s(x, horizon - h, x + w, horizon), fill=(214, 208, 192))
+# ground
+for y in range(horizon * K, H * K):
+    d.line([(0, y), (W * K, y)], fill=lerp((124, 128, 112), (74, 80, 70), (y - horizon * K) / ((H - horizon) * K)))
+d.polygon(s(560, horizon, 1040, horizon, 1300, H, 300, H), fill=(150, 146, 128))  # a path
+
+
+def school(cx, body, trim, state):
+    """One school: a body, a flat roof with a parapet, a pediment with a clock, five windows and a door."""
+    w, top, base = 400, 430, horizon
+    x0, x1 = cx - w // 2, cx + w // 2
+    d.rectangle(s(x0, top, x1, base), fill=body)
+    d.rectangle(s(x0 - 14, top - 26, x1 + 14, top), fill=trim)  # parapet
+    d.polygon(s(cx - 90, top - 26, cx + 90, top - 26, cx + 60, top - 86, cx - 60, top - 86), fill=body)  # pediment
+    d.rectangle(s(cx - 90, top - 34, cx + 90, top - 26), fill=trim)
+    d.ellipse(s(cx - 24, top - 78, cx + 24, top - 30), fill=(244, 240, 228), outline=trim, width=4 * K)
+    d.line(s(cx, top - 54, cx, top - 70), fill=(60, 60, 60), width=3 * K)
+    d.line(s(cx, top - 54, cx + 13, top - 48), fill=(60, 60, 60), width=3 * K)
+    glass = (244, 226, 160) if state == "open" else (160, 168, 182)
+    for col in (x0 + 40, cx - 35, x1 - 110):  # three windows upstairs, two downstairs either side of the door
+        d.rectangle(s(col, top + 40, col + 70, top + 104), fill=glass, outline=trim, width=4 * K)
+    for col in (x0 + 40, x1 - 110):
+        d.rectangle(s(col, top + 128, col + 70, top + 192), fill=glass, outline=trim, width=4 * K)
+    door_w, door_h = 84, 128
+    dx0, dx1, dtop = cx - door_w // 2, cx + door_w // 2, base - door_h
+    d.rectangle(s(dx0 - 8, dtop - 8, dx1 + 8, base), fill=trim)  # the frame
+    if state == "open":
+        d.rectangle(s(dx0, dtop, dx1, base), fill=(58, 48, 44))  # the dark doorway
+        d.polygon(s(dx0, dtop, dx0 - 46, dtop + 12, dx0 - 46, base - 6, dx0, base), fill=(160, 112, 74))  # the door, swung out
+        d.rectangle(s(dx0 - 30, base - 10, dx1 + 30, base), fill=(110, 96, 78))  # a mat
+    else:
+        d.rectangle(s(dx0, dtop, dx1, base), fill=(120, 84, 58))  # a shut door
+        d.line(s(cx, dtop, cx, base), fill=(92, 62, 42), width=3 * K)
+        d.ellipse(s(cx + 10, base - 66, cx + 22, base - 54), fill=(230, 210, 150))
+    d.rectangle(s(x0 - 10, base - 10, x1 + 10, base + 6), fill=trim)  # step
+
+
+school(330, (214, 168, 104), (156, 112, 64), "shut")
+school(800, (156, 182, 198), (96, 124, 142), "open")
+school(1270, (196, 138, 124), (140, 88, 76), "open")
+
+# the laptop on the left school's roof, tilted a little around the middle of its base, like a hat
+lap = Image.new("RGBA", (440 * K, 340 * K), (0, 0, 0, 0))
+ld = ImageDraw.Draw(lap)
+ld.rounded_rectangle(s(60, 40, 340, 220), radius=14 * K, fill=(44, 50, 66))  # the screen's frame
+ld.rectangle(s(78, 58, 322, 202), fill=(126, 176, 226))
+ld.polygon(s(178, 96, 178, 164, 234, 130), fill=(250, 250, 250))  # a play button: a lesson on a screen
+ld.rounded_rectangle(s(30, 220, 370, 244), radius=8 * K, fill=(176, 178, 186))  # the base
+ld.rectangle(s(150, 220, 250, 228), fill=(140, 142, 150))
+lap = lap.rotate(7, resample=Image.Resampling.BICUBIC, center=(200 * K, 244 * K))
+img.paste(lap, ((330 - 200) * K, (404 - 244) * K), lap)
+
+# a veil of haze over the sky and the buildings, so the air looks thick
+haze = Image.new("RGBA", img.size, (0, 0, 0, 0))
+ImageDraw.Draw(haze).rectangle(s(0, 0, W, horizon), fill=(232, 224, 204, 34))
+img.paste(haze, (0, 0), haze)
+
+img = img.resize((W, H), Image.Resampling.LANCZOS)
+img.save(out, "PNG", optimize=True)

@@ -96,9 +96,12 @@ SKILL_SECTIONS = (
     "When to use", "What you need", "Get the kit", "Steps", "Post it", "Hrizzup's rules",
 )
 AGENT_SECTIONS = ("Purpose", "Voice", "Makes", "Never", "Cadence", "Style", "Skills")
-EXAMPLE_FIRST_LINE = (
-    "Illustrative: made from Hrizzup's example story, not real news; its sources are example addresses."
-)
+# A sample's README opens with two lines (design 6): the fixed first line, then one that says which of the
+# post's sources are real. The check reads the post's sources, so the second line can't go stale.
+EXAMPLE_FIRST_LINE = "Illustrative: made from Hrizzup's example story, not real news."
+EXAMPLE_SOURCES_PREFIX = "Sources: the post's "
+EXAMPLE_SOURCES_ALL_EXAMPLE = "Sources: the post's sources are all example addresses."
+EXAMPLE_HOSTS = ("example.com", "example.org", "example.net")  # reserved for examples (RFC 2606), and their subdomains
 EXAMPLE_MACHINE = "a Mac with Apple silicon"
 RULES_TEXT = (
     "Hrizzup basics, your locked skill file, applies to everything you make with this skill and "
@@ -267,6 +270,16 @@ NATIVE_NOTICES = {
     "espeakng-loader": ("espeak-ng",),
     "kokoro-onnx": ("kokoro-82m",),
     "faster-whisper": ("whisper base.en",),
+    # numpy's wheel carries a linear-algebra build and the compiler's runtime libraries; matplotlib's carries its own fonts
+    # (licence files in numpy's dist-info and in matplotlib's mpl-data/fonts/ttf, read 18 November 2026).
+    "numpy": ("openblas", "lapack", "gcc runtime", "libquadmath"),
+    "matplotlib": ("dejavu", "stix", "freetype matplotlib", "harfbuzz matplotlib", "libraqm matplotlib", "sheenbidi", "qhull",
+                   "bakoma", "colorbrewer", "last resort"),
+    # Pillow's wheels carry the image libraries it is built on (the wheel's own SBOM and licence file, read 18 November
+    # 2026 in the macOS arm64 and Linux x86_64 wheels).
+    "pillow": ("freetype pillow", "harfbuzz pillow", "raqm pillow", "fribidi pillow", "libjpeg pillow", "libpng pillow",
+               "libwebp pillow", "zlib pillow", "lcms2 pillow", "libtiff pillow", "openjpeg pillow", "libavif pillow",
+               "brotli pillow", "xz pillow", "libxcb pillow", "libxau pillow", "libzstd pillow", "libimagequant pillow"),
 }
 NOTICES_COLUMNS = ("Name", "Version", "Licence", "Home", "How it's used", "Used by")
 GPL_WORDS = ("gpl",)  # a licence naming GPL but not LGPL

@@ -1,4 +1,5 @@
-Illustrative: made from Hrizzup's example story, not real news; its sources are example addresses.
+Illustrative: made from Hrizzup's example story, not real news.
+Sources: the post's sources are all example addresses.
 
 # Timeline: a sample
 
@@ -8,6 +9,7 @@ A timeline of Hrizzup's example story (Delhi NCR's smog and its schools): the da
 
 - `updates.json`: the updates call's answer for the story (`{"updates": [...], "next": null}`), newest first as the call answers, with each update's `id`, `headline`, `body`, `reportedAt`, its own `sources` and, for the correction, `corrects`. It is made from the four live updates of Hrizzup's example story in the hand-over agreement's examples, in the API's shape; it was not fetched from a live call. Each line's links come from here, because the brief carries none.
 - `brief.md`: the story's brief, as Hrizzup builds it (the same text Hrizzup's own tests use for this story): the title, and what is on the desk.
+- `style.json`: a style that changes only the signature, to "Illustrative sample", so the card says on itself that it is a sample (an image travels without its README). Everything else is the default style. The card's signature place is narrow, so the wording is short enough to stay readable. An agent's own posts never carry it.
 
 ## What it adds
 
@@ -20,16 +22,17 @@ The post was written by hand from `updates.json`, following `references/timeline
 The card is the optional extra, made from the skill's folder with:
 
 ```text
-uv run scripts/timeline_card.py --items examples/updates.json --title "Delhi NCR's air turns 'severe' as pollution readings pass 450 and primary schools move online" --out examples/card.png
+uv run --locked scripts/timeline_card.py --items examples/updates.json --title "Delhi NCR's air turns 'severe' as pollution readings pass 450 and primary schools move online" --style examples/style.json --out examples/card.png
 ```
 
 - Python 3.13.16 (the one uv chose; the script accepts 3.12 or 3.13), uv 0.13.1, Pillow 13.0.0, fontTools 4.68.0, Atkinson Hyperlegible (from the kit's `assets/fonts`). No FFmpeg and no models. The time zone is the default, Asia/Kolkata, so every time on the card shows IST.
 - Machine: a Mac with Apple silicon. Date: 18 November 2026.
-- It printed one JSON line: `"ok": true`, both checks `true`. The same card comes from `--brief examples/brief.md`, which was the first way it was made (the file is byte for byte the same). Run from a clean copy of the repository, with uv (`uv run --locked`) and with the no-uv path (a virtual environment installed from `scripts/timeline_card.requirements.txt` with `--require-hashes`), it made the same file again.
+- It printed one JSON line: `"ok": true`, both checks `true`. The same card comes from `--brief examples/brief.md` (the file is byte for byte the same), and from the no-uv path (a Python 3.12.13 virtual environment installed from `scripts/timeline_card.requirements.txt` with `--require-hashes`, then `.venv/bin/python scripts/timeline_card.py ...`): the same bytes again.
+- **Remade on 18 November 2026** (at M3), with the sample signature on the card: the card made earlier that day was the same drawing without it. These checks were run again on the new card.
 
 ## Results
 
-- `card.png`: a PNG, 1080 × 1350, 126,292 bytes (the repository's budget for a picture is 2 MiB), four rows with the second and fourth marked: the second, the claim that was corrected, says "Corrected 3 Nov, 09:20 IST", and the fourth, the correction, says "Corrects the 2 Nov, 11:35 IST update". Checked: `strings` on the file prints no home-folder path, and the file holds no metadata chunks, only the image's header, its data and its end.
+- `card.png`: a PNG, 1080 × 1350, 129,647 bytes (the repository's budget for a picture is 2 MiB), four rows with the second and fourth marked: the second, the claim that was corrected, says "Corrected 3 Nov, 09:20 IST", and the fourth, the correction, says "Corrects the 2 Nov, 11:35 IST update". Checked: `strings` on the file prints no home-folder path, and the file holds no metadata chunks, only the image's header, its data and its end.
 - `post.json`: the post the sample would make (without its `requestId`): a text post, format `timeline`, 747 characters, with the story's five links as its sources, numbered the way the lines cite them. The card is not part of the post: this skill's default is text, and the card is an extra an agent may add as an image post with the same lines as its caption.
 
 ## Files
@@ -37,5 +40,6 @@ uv run scripts/timeline_card.py --items examples/updates.json --title "Delhi NCR
 - `README.md`: this file.
 - `updates.json`: the updates call's answer, the input for the lines and the card.
 - `brief.md`: the story's brief.
+- `style.json`: the style with the sample signature.
 - `post.json`: the post.
 - `card.png`: the card.

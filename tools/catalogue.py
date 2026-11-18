@@ -33,6 +33,7 @@ import subprocess
 import tomllib
 import unicodedata
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import frontmatter
 import rules
@@ -1377,6 +1378,54 @@ def check_post(tree, slug, fields, P):
                 P.add(rel, "examples", "%s is %sx%s; Hrizzup wants %s" % (file, info.width, info.height, " or ".join("%dx%d" % s for s in sizes)))
 
 
+def example_address(address):
+    """Whether a web address is on a host reserved for examples (example.com, .org, .net and their subdomains)."""
+    try:
+        host = (urlsplit(address).hostname or "").lower()
+    except ValueError:
+        return False
+    return any(host == name or host.endswith("." + name) for name in rules.EXAMPLE_HOSTS)
+
+
+def real_sources(tree, slug):
+    """The sources of a sample's post.json that aren't example addresses, in order; None when the post can't be read
+    (its own check says why)."""
+    try:
+        post = json.loads(tree.text("skills/%s/examples/post.json" % slug) or "")
+    except ValueError:
+        return None
+    sources = post.get("sources", []) if isinstance(post, dict) else None
+    if not isinstance(sources, list):
+        return None
+    return [s for s in sources if isinstance(s, str) and not example_address(s)]
+
+
+def check_example_opening(readme, text, real, P):
+    """A sample's README opens with the fixed first line, then a line saying which of the post's sources are real,
+    so an image that travels without its README (it says "Illustrative" on itself) and its README stay true:
+    with only example addresses the line is fixed; with a real source, it starts "Sources: the post's" and names
+    each real address in full."""
+    lines = text.split("\n")
+    if lines[0] != rules.EXAMPLE_FIRST_LINE:
+        P.add(readme, "examples", "the first line must be: %s" % rules.EXAMPLE_FIRST_LINE)
+    second = lines[1] if len(lines) > 1 else ""
+    if real is None:
+        if not second.startswith(rules.EXAMPLE_SOURCES_PREFIX):
+            P.add(readme, "examples", "the second line must start: %s" % rules.EXAMPLE_SOURCES_PREFIX)
+    elif not real:
+        if second != rules.EXAMPLE_SOURCES_ALL_EXAMPLE:
+            P.add(readme, "examples", "the post's sources are all example addresses, so the second line must be: %s"
+                  % rules.EXAMPLE_SOURCES_ALL_EXAMPLE)
+    else:
+        if not second.startswith(rules.EXAMPLE_SOURCES_PREFIX) or second == rules.EXAMPLE_SOURCES_ALL_EXAMPLE:
+            P.add(readme, "examples", "the post has a source that isn't an example address, so the second line must "
+                  "start \"%s\" and name each real one" % rules.EXAMPLE_SOURCES_PREFIX.strip())
+        else:
+            for address in real:
+                if address not in second:
+                    P.add(readme, "examples", "the second line doesn't name the real source %s" % address)
+
+
 def check_examples(tree, slug, fields, P):
     folder = "skills/%s/examples/" % slug
     readme = folder + "README.md"
@@ -1384,8 +1433,7 @@ def check_examples(tree, slug, fields, P):
         P.add(readme, "examples", "missing: every skill's examples/ proves it, and its README.md says how")
     else:
         text = tree.text(readme) or ""
-        if text.split("\n", 1)[0] != rules.EXAMPLE_FIRST_LINE:
-            P.add(readme, "examples", "the first line must be: %s" % rules.EXAMPLE_FIRST_LINE)
+        check_example_opening(readme, text, real_sources(tree, slug) if tree.exists(folder + "post.json") else None, P)
         if rules.EXAMPLE_MACHINE not in text:
             P.add(readme, "examples", "must name the machine: \"%s\"" % rules.EXAMPLE_MACHINE)
         for name in tree.folder(folder):
@@ -1469,9 +1517,11 @@ def template_problems(stem, template):
     for number, text in enumerate(texts, start=1):
         label = "texts[%d]" % number
         want = {"slot", "box", "font", "max", "min", "lines", "align", "on", "case"}
-        if not isinstance(text, dict) or set(text) != want:
-            found.append("%s has exactly these keys: %s" % (label, ", ".join(sorted(want))))
+        if not isinstance(text, dict) or not want <= set(text) <= want | {"valign"}:
+            found.append("%s has exactly these keys: %s (and, optionally, valign)" % (label, ", ".join(sorted(want))))
             continue
+        if "valign" in text and text["valign"] not in ("top", "middle", "bottom"):
+            found.append("%s: valign is top, middle or bottom" % label)
         if not (isinstance(text["slot"], str) and re.match(r"^[a-z][a-z0-9_-]*$", text["slot"])) or text["slot"] in slots:
             found.append("%s: slot is a unique lower-case name" % label)
         slots.add(text["slot"])

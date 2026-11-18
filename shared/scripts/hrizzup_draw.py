@@ -21,6 +21,7 @@ import io
 import json
 import os
 import re
+import warnings
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -40,6 +41,7 @@ FAMILIES: Dict[str, Dict[str, str]] = {
     },
 }
 ROLES = ("display", "text", "text-bold")
+VALIGNS = ("top", "middle", "bottom")  # where a text's lines sit in its box (a template's optional "valign")
 LINE_HEIGHT = 1.25  # a line's height as a multiple of the font size
 OUTLINE = 0.08  # the outline of text over a picture, as a fraction of its size
 MIN_CONTRAST = 4.5  # WCAG's, for normal text
@@ -198,8 +200,9 @@ def check_glyphs(text: str, role: str, style: Dict[str, str], where: str = "the 
     missing = missing_glyphs(text, role, style)
     if missing:
         shown = ", ".join("U+%04X%s" % (ord(c), " (%s)" % HINTS[c] if c in HINTS else "") for c in missing[:6])
-        raise DrawError("%s has a character the %s font can't draw: %s. Use plain letters, digits and "
-                        "punctuation (no emoji; write Rs or INR for rupees, and \"to\" for an arrow)" % (where, role, shown))
+        raise DrawError("%s has a character the %s font can't draw: %s. The fonts draw English (Latin) letters, digits and "
+                        "common punctuation only: Hindi and other scripts are refused for now, and so are emoji. Use plain "
+                        "English letters (write Rs or INR for rupees, and \"to\" for an arrow)" % (where, role, shown))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -283,12 +286,18 @@ def fit_text(text: str, role: str, style: Dict[str, str], box: Tuple[float, floa
 
 
 def draw_lines(canvas: Image.Image, fitted: Fitted, box: Tuple[float, float, float, float], align: str,
-               fill: str, outline: Optional[str] = None) -> None:
-    """Draw fitted lines inside a pixel box, top-aligned; `outline` (a colour) adds the picture outline."""
+               fill: str, outline: Optional[str] = None, valign: str = "top") -> None:
+    """Draw fitted lines inside a pixel box, at its top, middle or bottom (`valign`); `outline` (a colour) adds
+    the picture outline."""
     draw = ImageDraw.Draw(canvas)
     stroke = max(1, round(fitted.size * OUTLINE)) if outline else 0
     x0, y0, x1, y1 = box
-    top = y0 + stroke
+    if valign == "middle":
+        top = y0 + (y1 - y0 - fitted.height) / 2
+    elif valign == "bottom":
+        top = y1 - stroke - fitted.height
+    else:
+        top = y0 + stroke
     for number, line in enumerate(fitted.lines):
         if not line:
             continue
@@ -307,13 +316,79 @@ def draw_lines(canvas: Image.Image, fitted: Fitted, box: Tuple[float, float, flo
 # Pictures
 # ---------------------------------------------------------------------------------------------
 
-def cover_crop(picture: Image.Image, size: Tuple[int, int], focus: Tuple[float, float] = (0.5, 0.5)) -> Image.Image:
-    """Fill `size` with the picture, cropped around a focus point (fractions of its width and height),
-    after turning it the way its EXIF says."""
+IMAGE_FORMATS = ("PNG", "JPEG", "MPO", "WEBP")  # what Pillow calls the formats a picture may have (MPO: a phone's JPEG)
+
+
+def load_picture(path: "str | os.PathLike[str]") -> Image.Image:
+    """Open a creator's picture and load it: a PNG, JPEG or WebP of at most 25 MiB, 40 megapixels and 8,192 px a side
+    (`hrizzup_media`). The size is read from the header and refused before any pixel is decoded, so a huge picture
+    can't fill the machine's memory. A refusal is a DrawError with code 2."""
+    Image.MAX_IMAGE_PIXELS = hrizzup_media.PICTURE_INPUT_MAX_PIXELS  # Pillow's own guard, at the same size
+    name = os.fspath(path)
+    try:
+        size = os.path.getsize(name)
+    except OSError as error:
+        raise DrawError("can't read the picture %s: %s" % (name, error.strerror or type(error).__name__))
+    if size > hrizzup_media.PICTURE_INPUT_MAX_BYTES:
+        raise DrawError("the picture %s is %d MiB; at most %d MiB" % (
+            name, size // hrizzup_media.MIB, hrizzup_media.PICTURE_INPUT_MAX_BYTES // hrizzup_media.MIB))
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", Image.DecompressionBombWarning)  # the size is checked, and refused, just below
+            picture = Image.open(name)
+    except (OSError, Image.UnidentifiedImageError, Image.DecompressionBombError, ValueError) as error:
+        raise DrawError("can't read %s as a picture: %s" % (name, error))
+    too_big = hrizzup_media.input_picture_problems(picture.width, picture.height)
+    if too_big:
+        picture.close()
+        raise DrawError("the picture %s is too big to use: %s. Make it smaller first (a post's picture is at most "
+                        "1080 px wide)" % (name, "; ".join(too_big)))
+    if picture.format not in IMAGE_FORMATS:
+        picture.close()
+        raise DrawError("the picture %s is a %s; use a PNG, JPEG or WebP" % (name, picture.format))
+    try:
+        picture.load()
+    except (OSError, ValueError, SyntaxError, Image.DecompressionBombError) as error:
+        picture.close()
+        raise DrawError("can't read %s as a picture: %s" % (name, error))
+    return picture
+
+
+def flatten(picture: Image.Image, paper: str = "#FFFFFF") -> Image.Image:
+    """The picture as 8-bit RGB, turned the way its EXIF says: transparency (an alpha channel, or a palette's
+    transparent colour) is laid over the `paper` colour, 16-bit grey is scaled to 8 bits, and a floating-point or
+    wider picture is refused (DrawError, code 2) rather than drawn wrongly."""
     upright = ImageOps.exif_transpose(picture)
+    mode = upright.mode
+    if mode == "F":
+        raise DrawError("the picture holds floating-point values: save it as an ordinary 8-bit PNG, JPEG or WebP")
+    if mode == "I" or mode.startswith("I;16"):
+        wide = upright.convert("I")
+        high = wide.getextrema()[1]
+        if high > 65535:
+            raise DrawError("the picture holds %d-bit values: save it as an ordinary 8-bit PNG, JPEG or WebP" % int(high).bit_length())
+        # An I;16 picture is always 16-bit (a dark one may never pass 255), so it is scaled by 1/257 (65535 is 255); a plain
+        # 32-bit `I` picture is scaled only when it holds values over 255 (below that, it already holds 8-bit values).
+        sixteen = mode.startswith("I;16") or high > 255
+        upright = (wide.point(lambda value: value * (1 / 257) + 0.5) if sixteen else wide).convert("L")  # rounded
+        mode = "L"
+    try:
+        if mode in ("RGBA", "LA", "PA", "RGBa", "La") or "transparency" in upright.info:
+            over = upright.convert("RGBA")
+            ground = Image.new("RGBA", over.size, _rgb(paper) + (255,))
+            return Image.alpha_composite(ground, over).convert("RGB")
+        return upright.convert("RGB")
+    except (ValueError, OSError) as error:
+        raise DrawError("can't use this picture (%s): save it as an ordinary 8-bit PNG, JPEG or WebP" % error)
+
+
+def cover_crop(picture: Image.Image, size: Tuple[int, int], focus: Tuple[float, float] = (0.5, 0.5),
+               paper: str = "#FFFFFF") -> Image.Image:
+    """Fill `size` with the picture, cropped around a focus point (fractions of its width and height), after
+    turning it the way its EXIF says and flattening it (`flatten`: transparency goes over `paper`)."""
     fx = min(1.0, max(0.0, float(focus[0])))
     fy = min(1.0, max(0.0, float(focus[1])))
-    return ImageOps.fit(upright.convert("RGB"), size, method=Image.Resampling.LANCZOS, centering=(fx, fy))
+    return ImageOps.fit(flatten(picture, paper), size, method=Image.Resampling.LANCZOS, centering=(fx, fy))
 
 
 def save_image(canvas: Image.Image, path: "str | os.PathLike[str]") -> str:
@@ -386,11 +461,14 @@ def render_template(template: Dict[str, Any], texts: Dict[str, str], style: Dict
                 raise DrawError("the template %s needs a picture" % template["id"])
         else:
             left, top, right, bottom = (int(round(v)) for v in _pixels(template["picture"]["box"], size))
-            canvas.paste(cover_crop(picture, (right - left, bottom - top), focus), (left, top))
+            canvas.paste(cover_crop(picture, (right - left, bottom - top), focus, style["paper"]), (left, top))
     slots = {t["slot"]: t for t in template["texts"]}
     for slot in texts:
         if slot not in slots:
             raise DrawError("the template %s has no slot %r (it has: %s)" % (template["id"], slot, ", ".join(slots)))
+    for spec in slots.values():
+        if spec.get("valign", "top") not in VALIGNS:
+            raise DrawError("the template %s: valign is one of %s" % (template["id"], ", ".join(VALIGNS)), 3)
     fitted: Dict[str, Fitted] = {}
     for slot, text in texts.items():
         spec = slots[slot]
@@ -418,7 +496,7 @@ def render_template(template: Dict[str, Any], texts: Dict[str, str], style: Dict
         spec = slots[slot]
         outline = "#000000" if spec["on"] == "picture" else None
         fill = "#FFFFFF" if spec["on"] == "picture" else foreground[spec["on"]]
-        draw_lines(canvas, found, _pixels(spec["box"], size), spec["align"], fill, outline)
+        draw_lines(canvas, found, _pixels(spec["box"], size), spec["align"], fill, outline, spec.get("valign", "top"))
         placed.append({"slot": slot, "size": found.size, "lines": len(found.lines)})
     signature = template["signature"]
     if signature is not None and style["signature"]:

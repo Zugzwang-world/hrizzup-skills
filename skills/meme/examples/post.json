@@ -1,0 +1,14 @@
+{
+  "storyId": "01a199e9-d180-75ec-8a81-134dd403419a",
+  "kind": "image",
+  "format": "meme",
+  "body": "Monday's update said schools across Delhi NCR had moved classes online. Tuesday's correction narrowed it: only Delhi's primary schools moved online, and schools in Noida and Gurugram stay open. The three buildings are a drawing, not these schools. Not confirmed: how long Delhi's primary schools stay online (the Monday update said until Friday; the correction doesn't repeat it).",
+  "sources": [
+    "https://example.com/sources/delhi-schools-clarification",
+    "https://example.com/sources/delhi-schools-notice"
+  ],
+  "media": {
+    "file": "meme.png",
+    "description": "Three school buildings side by side under a hazy sky, drawn in flat colours. The one on the left has a shut door and an open laptop, showing a play button, balanced on its roof like a hat; the other two have lit windows and open doors. Above the picture, in a text panel: \"Monday's update: schools across Delhi NCR go online. Tuesday's correction: only Delhi's primary schools. Noida and Gurugram stay open.\" Over the bottom of the picture, in white capital letters with a black outline: \"THE LAPTOP ONLY FIT ON ONE ROOF\". A small line below the picture reads: \"Illustrative sample · hrizzup-skills\"."
+  }
+}

@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import tempfile
+import types
 import unittest
 import zoneinfo
 from datetime import datetime, timezone
@@ -458,6 +459,53 @@ class Command(unittest.TestCase):
             code, report = run_main(["--items", path, "--out", path])
             self.assertEqual(code, 2)
             self.assertIn("overwrite", report["problem"])
+
+    def test_a_wrong_command_line_is_bad_input_with_the_json_line_not_argparses_own_exit(self):
+        for argv in (["--out", "c.png"], ["--bogus"], ["--items", "x.json"], ["--items", "x.json", "--out", "c.png", "--max-items", "many"]):
+            code, report = run_main(argv)
+            self.assertEqual(code, 2, argv)
+            self.assertFalse(report["ok"])
+            self.assertTrue(report["problem"])
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as caught:
+            card.main(["--help"])
+        self.assertEqual(caught.exception.code, 0)
+
+    def test_a_link_to_an_input_is_the_input(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = os.path.join(folder, "items.json")
+            with open(source, "w", encoding="utf-8") as f:
+                json.dump(example_updates(), f)
+            for make_link in (os.symlink, os.link):
+                link = os.path.join(folder, "c-%s.png" % make_link.__name__)
+                try:
+                    make_link(source, link)
+                except (OSError, NotImplementedError):
+                    continue
+                code, report = run_main(["--items", source, "--out", link])
+                self.assertEqual((code, "overwrite" in report["problem"]), (2, True), make_link.__name__)
+            with open(source, encoding="utf-8") as f:
+                self.assertEqual(json.load(f), example_updates())
+
+    def test_whatever_goes_wrong_the_last_line_is_the_json_line(self):
+        fake = types.ModuleType("hrizzup_draw")
+
+        class DrawError(Exception):
+            code = 2
+
+        fake.DrawError = DrawError
+        with tempfile.TemporaryDirectory() as folder:
+            source = os.path.join(folder, "items.json")
+            with open(source, "w", encoding="utf-8") as f:
+                json.dump(example_updates(), f)
+            argv = ["--items", source, "--out", os.path.join(folder, "c.png")]
+            for error, code in ((RuntimeError("boom"), 1), (KeyError("slot"), 1), (ImportError("No module named x"), 3)):
+                fake.load_style = mock.Mock(side_effect=error)
+                with mock.patch.dict(sys.modules, {"hrizzup_draw": fake}):
+                    got, report = run_main(argv)
+                self.assertEqual(got, code, error)
+                self.assertFalse(report["ok"])
+                self.assertEqual(set(report), {"ok", "outputs", "checks", "problem"})
+                self.assertTrue(report["problem"])
 
     def test_the_out_name_and_max_items_are_checked(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -1,0 +1,10 @@
+{
+  "id": "caption-bar",
+  "sizes": [[1080, 1080], [1080, 1350]],
+  "background": "paper",
+  "picture": {"box": [0, 0.25, 1, 0.935], "required": true},
+  "texts": [
+    {"slot": "text", "box": [0.06, 0.035, 0.94, 0.235], "font": "text-bold", "max": 72, "min": 34, "lines": 3, "align": "left", "on": "paper", "case": "as-is", "valign": "middle"}
+  ],
+  "signature": {"box": [0.06, 0.947, 0.94, 0.99], "align": "right"}
+}
