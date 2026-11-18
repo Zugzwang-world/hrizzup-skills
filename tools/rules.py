@@ -1,0 +1,261 @@
+"""The repository's fixed values, in one place (docs/design.md, 3 to 9).
+
+Standard library only. A new character, format code or pin is one line here and one test.
+Nothing here holds a digest, a home-folder path or an email address: bad examples for the tests
+are built from pieces where they are used, so these files never trip their own rules.
+"""
+
+from __future__ import annotations
+
+import re
+
+REPO = "Zugzwang-world/hrizzup-skills"
+REPO_URL = "https://github.com/" + REPO
+RAW_URL = "https://raw.githubusercontent.com/" + REPO + "/main"
+
+# hrizzup's `social.formats` (new codes land there first), and the example story's ID.
+FORMATS = (
+    "breakdown",
+    "timeline",
+    "explainer",
+    "meme",
+    "audio-brief",
+    "infographic",
+    "translation",
+    "source-check",
+)
+STORY_ID = "01a199e9-d180-75ec-8a81-134dd403419a"
+
+# ---- the catalogue (hrizzup's docs/social/skills-catalogue.md, version 1) ----
+CATALOGUE_VERSION = 1
+CATALOGUE_MAX_BYTES = 1024 * 1024
+KINDS = ("skill", "starter-agent")  # sorted in this order
+ITEM_KEYS = (
+    "slug", "kind", "name", "summary", "needs", "format", "path", "contentHash", "body", "meta",
+)
+SLUG = re.compile(r"^[a-z0-9](?:-?[a-z0-9])*$")
+SLUG_MAX = 54
+NAME_MAX = 60
+SUMMARY_MAX = 300
+NEEDS_MAX = 300
+DESCRIPTION_MAX = 500
+COMPATIBILITY_MAX = 500
+BODY_MAX_CHARS = 20000
+BODY_MAX_LINES = 500
+AGENT_BODY_MAX = 6000
+AGENT_SECTION_MAX = 1500
+AGENT_SKILLS_MAX = 5
+
+# ---- text (design 4.2) ----
+# Printable ASCII and these marks only, in catalogue text (frontmatter values, SKILL.md, AGENT.md).
+MARKS = "£°±·×–—‘’“”•…€₹←→−≈≤≥"
+# Unicode categories no other text file may hold (LF and tab are the exceptions).
+BAD_CATEGORIES = ("Cc", "Cf", "Co", "Cs", "Cn", "Zl", "Zp")
+LICENCE_FILE = "OFL.txt"  # kept byte for byte as published: CR LF and trailing spaces allowed
+
+
+def catalogue_char_ok(char: str, newline: bool = False) -> bool:
+    """Whether one character may appear in catalogue text."""
+    if char == "\n":
+        return newline
+    return " " <= char <= "~" or char in MARKS
+
+
+# ---- the repository's layout (design 3) ----
+TOP_LEVEL = (
+    ".github", ".gitattributes", ".gitignore", "README.md", "NOTICES.md", "catalogue.json",
+    "retired.txt", "docs", "shared", "skills", "agents", "tools",
+)
+TOP_LEVEL_DOT = (".github", ".gitattributes", ".gitignore")
+GITIGNORE_LINES = (".DS_Store", "__pycache__/", "*.pyc", ".venv/", "out/")
+# Names the working tree may hold that git ignores (the same five), so a local check matches CI.
+IGNORED_NAMES = (".DS_Store", "__pycache__", ".venv", "out", ".git")
+PATH_PART = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+PATH_MAX = 200
+FILE_MAX_BYTES = 25 * 1024 * 1024
+KIT_MAX_BYTES = 3 * 1024 * 1024
+README_START = "<!-- catalogue:start -->"
+README_END = "<!-- catalogue:end -->"
+
+# What a skill's folders may hold (the extension of each file, `.requirements.txt` counted whole).
+SKILL_FOLDERS = {
+    "scripts": (".py", ".lock", ".requirements.txt"),
+    "assets": (".ttf", ".json", ".png", ".mplstyle", ".txt"),  # .txt is OFL.txt only
+    "references": (".md",),
+    "examples": (".md", ".json", ".txt", ".png", ".jpg", ".webp", ".mp4", ".m4a", ".srt"),
+}
+BINARY_EXTENSIONS = (".ttf", ".png", ".jpg", ".webp", ".mp4", ".m4a")
+IMAGE_EXTENSIONS = (".png", ".jpg", ".webp")
+TEXT_EXTENSIONS = (
+    ".md", ".json", ".txt", ".srt", ".py", ".lock", ".mplstyle", ".yml", ".yaml",
+)
+SHARED_COPY_FOLDERS = ("references", "scripts", "assets")  # what `write` copies into a skill
+
+# ---- SKILL.md and AGENT.md (design 4.1, 4.3, 4.5) ----
+SKILL_SECTIONS = (
+    "When to use", "What you need", "Get the kit", "Steps", "Post it", "Hrizzup's rules",
+)
+AGENT_SECTIONS = ("Purpose", "Voice", "Makes", "Never", "Cadence", "Style", "Skills")
+EXAMPLE_FIRST_LINE = (
+    "Illustrative: made from Hrizzup's example story, not real news; its sources are example addresses."
+)
+EXAMPLE_MACHINE = "a Mac with Apple silicon"
+RULES_TEXT = (
+    "Hrizzup basics, your locked skill file, applies to everything you make with this skill and "
+    "wins over it. In particular: attach your sources; say what's unconfirmed; describe every "
+    "image you upload; give every video and audio its full transcript and a still image."
+)
+AGENT_INTRO_TEXT = (
+    "A starter agent from Hrizzup's marketplace. To start from it, save each section below as "
+    "your file of the same name, leave your categories and places empty until your owner chooses "
+    "them, and ask your owner to attach the skills listed. Your owner reshapes all of it in your chat."
+)
+STYLE_DEFAULT = {
+    "ink": "#111111", "paper": "#FFFFFF", "accent": "#111111",
+    "display_font": "anton", "text_font": "atkinson-hyperlegible", "signature": "",
+}
+BODY_MAX_POST = 5000  # a text post's body
+BODY_MAX_CAPTION = 1000  # a media post's body
+POST_KINDS = ("text", "image", "video", "audio")
+POST_SOURCES_MAX = 10
+POST_DESCRIPTION_MAX = 1000
+POST_TRANSCRIPT_MAX = 20000
+# The sizes each format's picture may have (design 9). Video and audio posts name their still.
+FORMAT_IMAGE_SIZES = {
+    "meme": ((1080, 1080), (1080, 1350)),
+    "infographic": ((1080, 1350), (1080, 1080)),
+    "timeline": ((1080, 1350), (1080, 1080)),
+}
+STILL_SIZES = {"video": (1080, 1920), "audio": (1080, 1080)}
+
+# ---- Hrizzup's text types (the API's, for a post's body, description and transcript) ----
+# The agreement's `text` pattern (agreement/definitions/common.schema.json) forbids these code point
+# ranges: controls, soft hyphen, joiners and direction marks, the private-use area and the like. Written as
+# numbers, so no invisible character is typed into this file. The zero-width joiner (0x200D) isn't in it.
+HIDDEN_RANGES = (
+    (0, 31), (127, 159), (173, 173), (847, 847), (1536, 1541), (1564, 1564), (1757, 1757), (1807, 1807),
+    (2192, 2193), (2274, 2274), (4447, 4448), (6068, 6069), (6155, 6159), (8203, 8204), (8206, 8207),
+    (8232, 8233), (8234, 8238), (8288, 8303), (12644, 12644), (57344, 63743), (65024, 65037), (65279, 65279),
+    (65440, 65440), (65520, 65531),
+)
+LF, TAB, ZWJ = 10, 9, 0x200D
+VARIATION_SELECTORS = (0xFE00, 0xFE0F)
+
+
+def hidden(char, allow=()):
+    """Whether a character is one the agreement's text rule forbids (`allow`: code points let through)."""
+    code = ord(char)
+    return code not in allow and any(low <= code <= high for low, high in HIDDEN_RANGES)
+
+
+def plain_text_problems(name, value, high):
+    """The API's `plain_text` (a post's body, a description): 1 to `high` characters, new lines allowed,
+    no control (but the new line) or invisible characters, no space or new line at either end."""
+    if not isinstance(value, str):
+        return ["%s isn't text" % name]
+    found = []
+    if not 1 <= len(value) <= high:
+        found.append("%s is %d characters; 1 to %d" % (name, len(value), high))
+    if value and (value[0] in " \n" or value[-1] in " \n"):
+        found.append("%s has a space or new line at an end" % name)
+    if any(hidden(c, allow=(LF,)) for c in value):
+        found.append("%s has a control or invisible character (a new line is fine, a tab is not)" % name)
+    return found
+
+
+def long_text_problems(name, value, high):
+    """The API's `longText` (a transcript): 1 to `high` characters, tabs and new lines but no other
+    control character, no invisible character, no stray joiner, no final new line."""
+    if not isinstance(value, str):
+        return ["%s isn't text" % name]
+    found = []
+    if not 1 <= len(value) <= high:
+        found.append("%s is %d characters; 1 to %d" % (name, len(value), high))
+    if any(hidden(c, allow=(LF, TAB, ZWJ, 0xFE0E, 0xFE0F)) for c in value):
+        found.append("%s has a control or invisible character (only tabs and new lines are allowed)" % name)
+    if any(VARIATION_SELECTORS[0] <= ord(a) <= VARIATION_SELECTORS[1] and VARIATION_SELECTORS[0] <= ord(b) <= VARIATION_SELECTORS[1]
+           for a, b in zip(value, value[1:])):
+        found.append("%s stacks variation selectors" % name)
+    joiner = chr(ZWJ)
+    if joiner in value:
+        def ascii_or_lf(char):
+            return char == "\n" or " " <= char <= "~"
+
+        stray = value.startswith(joiner) or value.endswith(joiner) or joiner * 2 in value or any(
+            (a == joiner and ascii_or_lf(b)) or (b == joiner and ascii_or_lf(a)) for a, b in zip(value, value[1:]))
+        if stray:
+            found.append("%s has a stray zero-width joiner" % name)
+    if value.endswith("\n"):
+        found.append("%s ends with a new line" % name)
+    return found
+
+
+# ---- scripts (design 5) ----
+REQUIRES_PYTHON = ">=3.12,<3.14"
+STDLIB_REQUIRES_PYTHON = ">=3.10"
+# Pinned 18 November 2026 (design 5): a release counts only if PyPI had it before this moment.
+EXCLUDE_NEWER = "2026-11-15T00:00:00Z"
+PINS = {
+    "pillow": "13.0.0",
+    "fonttools": "4.68.0",
+    "matplotlib": "3.11.2",
+    "numpy": "2.5.4",
+    "kokoro-onnx": "0.6.1",
+    "onnxruntime": "1.32.0",
+    "faster-whisper": "1.2.1",
+    "av": "18.1.0",  # not the newest: faster-whisper 1.2.1 can't use PyAV 19
+    "imageio-ffmpeg": "0.8.1",
+}
+MODULE_PREFIX = "hrizzup_"  # shared modules: no header, no --help
+SHARED_MODULES = ("hrizzup_media", "hrizzup_draw")
+DRAW_TOP_IMPORTS = ("PIL", "fontTools")  # hrizzup_draw may import these at its top
+# Who may import what (checked with ast; modules imported inside functions count too).
+NETWORK_MODULES = ("socket", "ssl", "http", "urllib")
+NETWORK_ALLOWED = ("check_links.py", "voice.py", "captions.py")
+GPL_MODULES = ("kokoro_onnx", "phonemizer", "espeakng_loader")
+GPL_ALLOWED = ("voice.py",)
+FFMPEG_MODULES = ("subprocess", "imageio_ffmpeg")
+FFMPEG_ALLOWED = ("hrizzup_media.py",)
+OFFLINE_SCRIPTS = ("voice.py", "captions.py")  # take --offline
+HELP_TAIL_LINES = 6
+HELP_TIMEOUT_SECONDS = 30
+
+# NOTICES.md: a package that ships code that isn't its own also needs rows for it, found by the
+# words in the row's name (design 5, "Native extras").
+NATIVE_NOTICES = {
+    "imageio-ffmpeg": ("ffmpeg binary",),
+    "av": ("ffmpeg libraries",),
+    "espeakng-loader": ("espeak-ng",),
+    "kokoro-onnx": ("kokoro-82m",),
+    "faster-whisper": ("whisper base.en",),
+}
+NOTICES_COLUMNS = ("Name", "Version", "Licence", "Home", "How it's used", "Used by")
+GPL_WORDS = ("gpl",)  # a licence naming GPL but not LGPL
+BUNDLED_WORD = "bundled"
+
+# ---- a public repository (design 4.2, 5) ----
+# Built from pieces so this file doesn't match what it looks for.
+_HOME = r"(?<![A-Za-z0-9._-])(?:/Use[r]s/|/hom[e]/|[A-Za-z]:\\{1,2}Use[r]s\\{1,2})[A-Za-z0-9_.-]"
+HOME_PATH = re.compile(_HOME)
+EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}")
+NOREPLY_SUFFIX = "@users.noreply.github.com"
+
+# gitleaks 8.30.1's generic-api-key rule reads these words as a key's name (default config).
+DIGEST_WORDS = (
+    "access", "auth", "api", "credential", "creds", "key", "passwd", "password", "secret", "token",
+)
+# The shape that rule flags, narrowed to a 64-hex digest: a key word, up to 20 name characters, a
+# separator, then the digest. A pre-flight only: the Secret check stays the authority.
+DIGEST_TRAP = re.compile(
+    r"""(?i)(?:access|auth|api|credential|creds|key|passw(?:or)?d|secret|token)"""
+    r"""[ \t\w.-]{0,20}[\s'"]{0,3}(?:=|>|:{1,3}=|\|\||:|=>|\?=|,)[`'"\s=]{0,5}[0-9a-f]{64}(?![0-9a-f])"""
+)
+
+# ---- workflows (design 7.2, ported from hrizzup's test_public_repo.py) ----
+SAFE_IN_SCRIPTS = re.compile(
+    r"^(?:github\.(?:sha|run_id|run_number|run_attempt|repository|repository_owner|workspace)"
+    r"|runner\.(?:temp|os|arch)|matrix\.[\w-]+)$"
+)
+PINNED_ACTION = re.compile(r"^[\w.-]+/[\w.-]+(?:/[\w./-]+)?@[0-9a-f]{40}$")
+GITHUBS_MACHINES = re.compile(r"^(?:ubuntu|windows|macos)-[\w.-]+$")
+FORBIDDEN_TRIGGERS = ("pull_request_target", "workflow_run")

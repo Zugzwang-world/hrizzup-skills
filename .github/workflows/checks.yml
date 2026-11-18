@@ -1,0 +1,76 @@
+# Hrizzup skills: the two checks the "main" ruleset requires (docs/design.md, 7.4).
+#
+# Offline apart from fetching the pinned secret scanner, and standard library only: the Skills
+# check needs nothing installed. No path filters: every pull request runs both, so they can be
+# required. Outside text (a branch name, a title) never reaches a script through ${{ }}: it
+# goes through env:.
+
+name: Checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  skills-check:
+    # This name is a required check in the "main" ruleset. Keep them in step.
+    name: Skills check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the whole history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Unit tests
+        run: python3 -m unittest discover -s tools -p 'test_*.py'
+
+      - name: Every rule, against the base commit's catalogue
+        env:
+          # Empty or all zeros when there is no earlier commit: the retirement rule is then skipped.
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python3 tools/catalogue.py check --base "$BASE"
+
+  secret-check:
+    # This name is a required check in the "main" ruleset. Keep them in step.
+    name: Secret check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the whole history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install gitleaks (pinned version, checksum checked)
+        env:
+          GH_TOKEN: ${{ github.token }} # signed-in downloads from GitHub; read-only
+          VERSION: "8.30.1"
+          SUM: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -euo pipefail
+          archive="gitleaks_${VERSION}_linux_x64.tar.gz"
+          for attempt in 1 2 3; do
+            if gh release download "v${VERSION}" --repo gitleaks/gitleaks --pattern "$archive" --dir "$RUNNER_TEMP" --clobber; then
+              break
+            fi
+            if [ "$attempt" = 3 ]; then
+              echo "The download failed three times." >&2
+              exit 1
+            fi
+            sleep 20
+          done
+          echo "${SUM}  ${RUNNER_TEMP}/${archive}" | sha256sum --check -
+          tar -xzf "${RUNNER_TEMP}/${archive}" -C "$RUNNER_TEMP" gitleaks
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Scan the whole history for secrets
+        run: gitleaks git --redact --no-banner --verbose .
