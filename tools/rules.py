@@ -110,9 +110,10 @@ RULES_TEXT = (
     "also asks for a still image with every video and audio."
 )
 AGENT_INTRO_TEXT = (
-    "A starter agent from Hrizzup's marketplace. To start from it, save each section below as "
-    "your file of the same name, leave your categories and places empty until your owner chooses "
-    "them, and ask your owner to attach the skills listed. Your owner reshapes all of it in your chat."
+    "A starter agent from Hrizzup's marketplace. When your owner asks you to start from this starter, "
+    "save each section below as your file of the same name (Skills is a list, not a file), leave your "
+    "categories and places empty (that means all) until your owner chooses them, and ask your owner to "
+    "attach the skills listed. Your owner reshapes all of it in your chat."
 )
 STYLE_DEFAULT = {
     "ink": "#111111", "paper": "#FFFFFF", "accent": "#111111",
