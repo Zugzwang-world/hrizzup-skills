@@ -809,6 +809,11 @@ def notice(name, version, licence="MIT", used="installed by the creator's setup"
     return "| %s | %s | %s | https://example.org | %s | %s |\n" % (name, version, licence, used, by)
 
 
+def native_rows(package):
+    """The rows a package's wheel needs besides its own: one for each of `rules.NATIVE_NOTICES`' words, named by them."""
+    return "".join(notice(words, "in the wheel", "MIT") for words in rules.NATIVE_NOTICES.get(package, ()))
+
+
 class Locks(Repo):
     def heavy(self, packages=PILLOW, deps=("pillow==13.0.0",), notices=None, name="draw.py"):
         """A script with packages, its lock, its requirements file and its NOTICES rows (safe to call twice)."""
@@ -816,7 +821,7 @@ class Locks(Repo):
         put(self.root, base, script_text(list(deps), name=name))
         put(self.root, base + ".lock", lock_text(packages))
         put(self.root, base[:-3] + ".requirements.txt", requirements_text(packages))
-        rows = notices if notices is not None else "".join(notice(n, v[0]) for n, v in packages.items())
+        rows = notices if notices is not None else "".join(notice(n, v[0]) + native_rows(n) for n, v in packages.items())
         put(self.root, "NOTICES.md", notices_without_rows() + rows)
         need = "The first run downloads nothing."
         no_uv = " On a machine without uv: `python3.12 -m venv .venv`, then `.venv/bin/python -m pip install --require-hashes -r scripts/%s.requirements.txt`." % name[:-3]
@@ -920,7 +925,7 @@ class Locks(Repo):
         self.fails(self.check(), "NOTICES.md", "notices", "pillow 13.0.0")
 
     def test_a_row_is_found_by_normalised_name(self):
-        self.heavy(notices=notice("PILLOW", "13.0.0"))
+        self.heavy(notices=notice("PILLOW", "13.0.0") + native_rows("pillow"))
         self.assertEqual([l for l in self.check() if l.startswith("NOTICES.md")], [])
 
     def test_native_extras_need_their_own_rows(self):
@@ -938,31 +943,41 @@ class Locks(Repo):
         edit(self.root, "NOTICES.md", NOTICE_HEADER, NOTICE_HEADER + extras)
         self.assertEqual([l for l in self.check() if l.startswith("NOTICES.md")], [])
 
-    def test_numpys_and_matplotlibs_own_libraries_and_fonts_need_rows(self):
-        packages = {"numpy": ("2.5.4", [H1]), "matplotlib": ("3.11.2", [H2])}
+    def test_what_the_wheels_of_numpy_matplotlib_and_pillow_carry_needs_rows(self):
+        packages = {"numpy": ("2.5.4", [H1]), "matplotlib": ("3.11.2", [H2]), "pillow": ("13.0.0", [H3])}
         deps = ["%s==%s" % (n, v[0]) for n, v in packages.items()]
-        rows = "".join(notice(n, v[0]) for n, v in packages.items())
-        self.heavy(packages=packages, deps=deps, notices=rows)
+        own = "".join(notice(n, v[0]) for n, v in packages.items())
+        self.heavy(packages=packages, deps=deps, notices=own)
         lines = self.check()
-        for words in ("openblas", "lapack", "gcc runtime", "libquadmath", "dejavu", "stix"):
-            self.fails(lines, "NOTICES.md", "notices", '"%s"' % words)
-        extras = (notice("OpenBLAS", "in numpy", "BSD-3-Clause") + notice("LAPACK", "in numpy", "BSD-3-Clause-Open-MPI")
-                  + notice("GCC runtime library", "in numpy", "GPL-3.0-or-later WITH GCC-exception-3.1", used="installed by the creator's setup")
-                  + notice("libquadmath", "in numpy", "LGPL-2.1-or-later") + notice("DejaVu fonts", "in matplotlib", "Bitstream Vera")
-                  + notice("STIX fonts", "in matplotlib", "SIL OFL 1.1"))
-        edit(self.root, "NOTICES.md", NOTICE_HEADER, NOTICE_HEADER + extras)
+        for package in packages:
+            for words in rules.NATIVE_NOTICES[package]:
+                self.fails(lines, "NOTICES.md", "notices", '"%s"' % words)
+        self.heavy(packages=packages, deps=deps, notices=own + "".join(native_rows(n) for n in packages))
         self.assertEqual([l for l in self.check() if l.startswith("NOTICES.md")], [])
-        # the GCC runtime is GPL: its row may not say "bundled"
-        edit(self.root, "NOTICES.md", "installed by the creator's setup", "bundled in the kit", count=99)
+        asked = sum(rules.NATIVE_NOTICES.values(), ())
+        for words in ("freetype pillow", "harfbuzz pillow", "libjpeg pillow", "libpng pillow", "libwebp pillow", "zlib pillow",
+                      "lcms2 pillow", "libtiff pillow", "openjpeg pillow", "libavif pillow", "brotli pillow", "xz pillow",
+                      "libxcb pillow", "freetype matplotlib", "bakoma", "colorbrewer", "openblas", "gcc runtime", "dejavu", "stix"):
+            self.assertIn(words, asked)  # asked for by rules.py
+        # a row for the GCC runtime or libimagequant is GPL: it may not say "bundled"
+        gpl = own + "".join(native_rows(n) for n in packages if n != "numpy") + "".join(
+            notice(words, "in the wheel", "GPL-3.0-or-later WITH GCC-exception-3.1", used="bundled in the kit") for words in rules.NATIVE_NOTICES["numpy"])
+        self.heavy(packages=packages, deps=deps, notices=gpl)
         self.fails(self.check(), "NOTICES.md", "notices", "bundled")
 
-    def test_the_repositorys_own_numpy_and_matplotlib_rows_say_installed_not_bundled(self):
+    def test_the_repositorys_own_rows_for_wheels_say_installed_not_bundled(self):
         text = (REAL / "NOTICES.md").read_text(encoding="utf-8")
-        for words in ("openblas", "gcc runtime", "dejavu", "stix"):
-            row = [line for line in text.split("\n") if line.lower().startswith("| " + words)]
-            self.assertEqual(len(row), 1, words)
-            self.assertIn("installed by the creator's setup", row[0])
-            self.assertNotIn("bundled", row[0].lower())
+        rows = [line for line in text.split("\n") if line.startswith("| ")]
+        names = [line.split("|")[1].strip().lower() for line in rows]
+        for package in ("numpy", "matplotlib", "pillow"):
+            for words in rules.NATIVE_NOTICES[package]:
+                found = [row for row, name in zip(rows, names) if all(word in name for word in words.split())]
+                self.assertTrue(found, words)
+                for row in found:
+                    self.assertIn("installed by the creator's setup", row.lower(), words)
+                    self.assertNotIn("bundled", row.lower(), words)
+        for words in ("gcc runtime", "libimagequant"):  # the GPL ones, by name
+            self.assertTrue([r for r, n in zip(rows, names) if words in n and "gpl-3.0" in r.lower()], words)
 
     def test_a_gpl_row_never_says_bundled(self):
         self.heavy(notices=notice("Pillow", "13.0.0", licence="GPL-3.0-or-later", used="bundled in the kit"))

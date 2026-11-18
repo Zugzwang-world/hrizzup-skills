@@ -126,6 +126,35 @@ class Workflow(unittest.TestCase):
         self.assertIn("path: out", text)
         self.assertIn("if: always()", text)  # the pictures are kept even when a run fails
 
+    def test_it_runs_the_whole_suite_with_the_packages_installed_even_after_a_failed_run(self):
+        text = workflow_text()
+        step = text[text.index("- name: Run the whole unit-test suite"):text.index("- name: Keep the pictures")]
+        self.assertIn("if: always()", step)
+        self.assertIn("uv run --no-project --python 3.12", step)
+        self.assertIn("--with-requirements skills/infographic/scripts/infographic.requirements.txt", step)
+        self.assertIn("python -m unittest discover -s tools -p 'test_*.py'", step)
+        self.assertLess(text.index("kits_run.py"), text.index("unittest discover"))  # after the kits, before the artifact
+        self.assertTrue(os.path.isfile(os.path.join(ROOT, "skills", "infographic", "scripts", "infographic.requirements.txt")))
+
+    def test_the_one_requirements_file_holds_every_package_the_other_kits_need(self):
+        """The suite's single `--with-requirements` is enough only while the infographic's set covers the meme's and the timeline's."""
+        def pins(path):
+            found = {}
+            with open(os.path.join(ROOT, "skills", path), encoding="utf-8") as f:
+                for line in f:
+                    match = re.match(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==([^\s;\\]+)", line)
+                    if match:
+                        found[match.group(1).lower()] = match.group(2)
+            return found
+
+        big = pins("infographic/scripts/infographic.requirements.txt")
+        self.assertTrue(big)
+        for small in ("meme/scripts/meme.requirements.txt", "timeline/scripts/timeline_card.requirements.txt"):
+            for name, version in pins(small).items():
+                self.assertEqual(big.get(name), version, (small, name))
+        for needed in ("pillow", "fonttools", "matplotlib", "numpy"):  # what the real-drawing tests import
+            self.assertIn(needed, big)
+
     def test_it_is_not_a_required_check(self):
         checks = os.path.join(ROOT, ".github", "workflows", "checks.yml")
         with open(checks, encoding="utf-8") as f:

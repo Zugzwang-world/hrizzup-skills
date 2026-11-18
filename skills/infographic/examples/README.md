@@ -57,7 +57,7 @@ The checker ran on 18 November 2026 at 12:39 UTC (an earlier run took the portal
 
 ## Results
 
-- `infographic.png`: a PNG, 1080 x 1350, 89,156 bytes (the repository's budget for a picture is 2 MiB): the title, the subtitle, six bands stacked in proportion from Good at the bottom to Severe at the top, each named with its range, a black marker at 450 beside the large number 450 and "The example story's reading", the source line, and the signature line "Illustrative sample · hrizzup-skills". Checked: `strings` on the file prints no home-folder path ("checked"), and the file holds no metadata, only the image's header, its data and its end.
+- `infographic.png`: a PNG, 1080 x 1350, 89,164 bytes (the repository's budget for a picture is 2 MiB): the title, the subtitle, six bands stacked in proportion from Good at the bottom to Severe at the top, each named with its range, a black marker at 450 beside the large number 450 and "The example story's reading", the source line, and the signature line "Illustrative sample · hrizzup-skills". Checked: `strings` on the file prints no home-folder path ("checked"), and the file holds no metadata, only the image's header, its data and its end.
 - `post.json`: the post the sample would make (without its `requestId`): an image post, format `infographic`, a 484-character caption that says the message, where the bands come from and what is unconfirmed (which stations passed 450 first, the question the brief's desk already asks), the two real sources and the example one behind the 450, and a description of 715 characters.
 
 ## Files

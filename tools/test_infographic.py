@@ -356,7 +356,7 @@ class Layout(unittest.TestCase):
 
 
 class Colours(unittest.TestCase):
-    """Every lighter shade of ink that is drawn passes WCAG's 4.5 to 1 against the paper."""
+    """Text in a tint of ink has WCAG's 4.5 to 1 against the paper; a mark (a fill, a line) has its 3 to 1 for graphics."""
 
     STYLES = (
         {"ink": "#111111", "paper": "#FFFFFF", "accent": "#111111"},
@@ -373,37 +373,68 @@ class Colours(unittest.TestCase):
         self.assertLess(info.contrast("#777777", "#FFFFFF"), 4.6)
         self.assertEqual(info.contrast("#112233", "#FFEEDD"), info.contrast("#FFEEDD", "#112233"))
 
-    def test_a_shade_that_would_not_read_is_darkened_until_it_does(self):
+    def test_text_in_a_tint_that_would_not_read_is_darkened_until_it_does(self):
         paper, ink = "#FFFFFF", "#111111"
-        self.assertLess(info.contrast(info.mix(paper, ink, info.TINT_OTHERS), paper), 4.5)  # the old bars: too light
+        self.assertLess(info.contrast(info.mix(paper, ink, 0.3), paper), 4.5)
         floor = info.readable_share(paper, ink)
-        self.assertGreater(floor, info.TINT_OTHERS)
         self.assertGreaterEqual(info.contrast(info.mix(paper, ink, floor), paper), 4.5)
         self.assertLess(info.contrast(info.mix(paper, ink, floor - 0.01), paper), 4.5)  # and no darker than it has to be
-        self.assertEqual(info.shade(paper, ink, info.TINT_OTHERS), info.mix(paper, ink, floor))
+        self.assertEqual(info.shade(paper, ink, 0.3), info.mix(paper, ink, floor))
         self.assertEqual(info.shade(paper, ink, 0.9), info.mix(paper, ink, 0.9))  # a dark enough shade is left alone
 
     def test_when_no_lighter_shade_reads_the_full_ink_is_used(self):
         for share in (0.0, 0.14, 0.38, 0.75, 0.99):
             self.assertEqual(info.shade("#FFFFFF", "#767676", share), "#767676", share)  # 4.54 to 1: nothing lighter passes
 
-    def test_every_shade_drawn_in_any_style_has_4_5_to_1(self):
+    def test_a_mark_only_needs_3_to_1_so_it_may_be_lighter_than_text(self):
+        paper, ink = "#FFFFFF", "#111111"
+        text, mark = info.readable_share(paper, ink), info.readable_share(paper, ink, ratio=info.GRAPHIC_CONTRAST)
+        self.assertLess(mark, text)
+        self.assertGreaterEqual(info.contrast(info.mix(paper, ink, mark), paper), 3.0)
+        self.assertLess(info.contrast(info.mix(paper, ink, mark - 0.01), paper), 3.0)
+        self.assertEqual(info.shade(paper, ink, 0.0, ratio=info.GRAPHIC_CONTRAST), info.mix(paper, ink, mark))
+        self.assertEqual(info.GRAPHIC_CONTRAST, 3.0)
+        self.assertEqual(info.MIN_CONTRAST, 4.5)
+
+    def test_every_shade_of_text_has_4_5_to_1_and_every_fill_3_to_1_in_any_style(self):
         for style in self.STYLES:
             paper, ink = style["paper"], style["ink"]
             self.assertGreaterEqual(info.contrast(ink, paper), 4.5, style)
-            floor = info.readable_share(paper, ink)
-            shares = [info.tint_for(n, 6, floor) for n in range(6)] + [info.TINT_OTHERS, 0.86, 0.5, 0.7, 0.75]
-            for share in shares:
+            for share in (0.5, 0.7, 0.75):  # the lighter text there is
                 self.assertGreaterEqual(info.contrast(info.shade(paper, ink, share), paper), 4.5, (style, share))
-            ramp = [info.tint_for(n, 6, floor) for n in range(6)]
-            self.assertEqual(ramp, sorted(ramp))  # still light to dark
-            self.assertGreaterEqual(ramp[0], floor - 1e-9)
+            for share in (info.TINT_OTHERS, 0.86, 0.5):  # the bars, columns and baseline
+                self.assertGreaterEqual(info.contrast(info.shade(paper, ink, share, ratio=info.GRAPHIC_CONTRAST), paper), 3.0, (style, share))
+            for count in (2, 3, 6, 8):
+                fills = info.band_fills(style, count)
+                self.assertEqual(len(fills), count)
+                for fill in fills:
+                    self.assertGreaterEqual(info.contrast(fill, paper), 3.0, (style, count, fill))
+
+    def test_the_bands_keep_a_wide_ramp_not_one_grey(self):
+        fills = info.band_fills(self.STYLES[0], 6)
+        self.assertEqual(len(set(fills)), 6)  # six different fills
+        self.assertEqual(fills[-1], info.mix("#FFFFFF", "#111111", info.TINT_HIGH))  # near-black at the top
+        darkest_to_lightest = [info.contrast(f, "#FFFFFF") for f in fills]
+        self.assertEqual(darkest_to_lightest, sorted(darkest_to_lightest))  # light at the bottom, dark at the top
+        floor_for_text = info.mix("#FFFFFF", "#111111", info.readable_share("#FFFFFF", "#111111"))
+        self.assertLess(info.contrast(fills[0], "#FFFFFF"), info.contrast(floor_for_text, "#FFFFFF"))  # lighter than text may be
+        # a wider ramp than the text rule would leave: the neighbours differ more
+        text_ramp = [info.mix("#FFFFFF", "#111111", info.tint_for(n, 6, info.readable_share("#FFFFFF", "#111111"))) for n in range(6)]
+        self.assertGreater(info.contrast(fills[0], fills[1]), info.contrast(text_ramp[0], text_ramp[1]))
+
+    def test_grey_ink_still_has_bands_you_can_tell_apart(self):
+        fills = info.band_fills(self.STYLES[1], 6)  # #767676 on white
+        self.assertGreater(len(set(fills)), 1)
+        self.assertEqual(fills, sorted(fills, reverse=True))  # lightest first: the hex strings of grey fall as the grey darkens
+        # when the ink has less than 3 to 1 on the paper there is no lighter tint that reads: every band is the ink
+        self.assertEqual(set(info.band_fills({"ink": "#999999", "paper": "#FFFFFF", "accent": "#999999"}, 4)), {"#999999"})
 
     def test_the_accent_is_used_only_where_it_reads_on_the_paper(self):
         self.assertEqual(info.accent_on_paper(self.STYLES[0]), "#111111")
         self.assertEqual(info.accent_on_paper(self.STYLES[2]), "#B3261E")  # a dark red reads on cream
         self.assertEqual(info.accent_on_paper(self.STYLES[4]), "#111111")  # yellow on white doesn't: the ink
         self.assertEqual(info.accent_on_paper(self.STYLES[3]), "#FFE600")  # but yellow on a dark paper does
+        self.assertEqual(info.accent_on_paper({"ink": "#111111", "paper": "#FFFFFF", "accent": "#D84315"}), "#D84315")  # 4.0 to 1: enough for a mark
 
 
 class Marker(unittest.TestCase):

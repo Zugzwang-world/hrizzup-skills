@@ -367,7 +367,10 @@ def flatten(picture: Image.Image, paper: str = "#FFFFFF") -> Image.Image:
         high = wide.getextrema()[1]
         if high > 65535:
             raise DrawError("the picture holds %d-bit values: save it as an ordinary 8-bit PNG, JPEG or WebP" % int(high).bit_length())
-        upright = (wide if high <= 255 else wide.point(lambda value: value * (1 / 256) + 0.5)).convert("L")  # 16-bit to 8-bit, rounded
+        # An I;16 picture is always 16-bit (a dark one may never pass 255), so it is scaled by 1/257 (65535 is 255); a plain
+        # 32-bit `I` picture is scaled only when it holds values over 255 (below that, it already holds 8-bit values).
+        sixteen = mode.startswith("I;16") or high > 255
+        upright = (wide.point(lambda value: value * (1 / 257) + 0.5) if sixteen else wide).convert("L")  # rounded
         mode = "L"
     try:
         if mode in ("RGBA", "LA", "PA", "RGBa", "La") or "transparency" in upright.info:

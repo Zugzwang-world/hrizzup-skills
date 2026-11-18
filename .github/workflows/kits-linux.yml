@@ -5,6 +5,8 @@
 # `uv run --locked` (the lock beside each script) and once with plain pip from each script's hashed
 # requirements file in a fresh virtual environment. Every picture is read back with the repository's own
 # media reader, and kept as an artifact. The work is in tools/kits_run.py, which also runs on a Mac.
+# It then runs the whole unit-test suite with the packages installed (the infographic's set holds every
+# package the meme and the timeline need too), so the tests the offline check has to skip run here.
 #
 # GitHub starts a workflow_dispatch run only if the workflow file is on the default branch, so this can't
 # be run from the pull request that adds it. No expression is used inside a script, so outside text can't
@@ -40,6 +42,13 @@ jobs:
 
       - name: Run the three kits on the samples' inputs, with uv and with plain pip, and check every picture
         run: python3 tools/kits_run.py --out out --mode both --python 3.12
+
+      - name: Run the whole unit-test suite with the kits' packages installed (the tests the offline check skips)
+        if: always()
+        run: |
+          uv run --no-project --python 3.12 \
+            --with-requirements skills/infographic/scripts/infographic.requirements.txt \
+            python -m unittest discover -s tools -p 'test_*.py'
 
       - name: Keep the pictures and the summary
         if: always()

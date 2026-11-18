@@ -140,6 +140,25 @@ class Flattening(unittest.TestCase):
         again = draw.flatten(Image.open(buffer), PAPER)
         self.assertEqual([again.getpixel((n, 0))[0] for n in range(4)], [0, 1, 128, 255])
 
+    def test_a_dark_16_bit_grey_is_not_drawn_light(self):
+        dark = Image.new("I;16", (4, 1))
+        dark.putdata([0, 100, 200, 255])  # every value is at most 255, but this is a 16-bit picture: nearly black
+        flat = draw.flatten(dark, PAPER)
+        self.assertEqual([flat.getpixel((n, 0))[0] for n in range(4)], [0, 0, 1, 1])
+        buffer = io.BytesIO()
+        dark.save(buffer, "PNG")
+        buffer.seek(0)
+        again = draw.flatten(Image.open(buffer), PAPER)
+        self.assertEqual(max(again.getpixel((n, 0))[0] for n in range(4)), 1)
+        other = Image.new("I;16B", (2, 1))
+        other.putdata([255, 65535])
+        self.assertEqual([draw.flatten(other, PAPER).getpixel((n, 0))[0] for n in range(2)], [1, 255])  # big-endian too
+
+    def test_the_whole_16_bit_range_maps_to_the_whole_8_bit_range(self):
+        image = Image.new("I;16", (3, 1))
+        image.putdata([0, 65535, 32896])
+        self.assertEqual([draw.flatten(image, PAPER).getpixel((n, 0))[0] for n in range(3)], [0, 255, 128])
+
     def test_32_bit_integer_pictures(self):
         small = Image.new("I", (3, 1))
         small.putdata([0, 100, 255])  # values that are already 8-bit

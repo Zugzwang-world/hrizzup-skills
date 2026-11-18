@@ -273,7 +273,13 @@ NATIVE_NOTICES = {
     # numpy's wheel carries a linear-algebra build and the compiler's runtime libraries; matplotlib's carries its own fonts
     # (licence files in numpy's dist-info and in matplotlib's mpl-data/fonts/ttf, read 18 November 2026).
     "numpy": ("openblas", "lapack", "gcc runtime", "libquadmath"),
-    "matplotlib": ("dejavu", "stix"),
+    "matplotlib": ("dejavu", "stix", "freetype matplotlib", "harfbuzz matplotlib", "libraqm matplotlib", "sheenbidi", "qhull",
+                   "bakoma", "colorbrewer", "last resort"),
+    # Pillow's wheels carry the image libraries it is built on (the wheel's own SBOM and licence file, read 18 November
+    # 2026 in the macOS arm64 and Linux x86_64 wheels).
+    "pillow": ("freetype pillow", "harfbuzz pillow", "raqm pillow", "fribidi pillow", "libjpeg pillow", "libpng pillow",
+               "libwebp pillow", "zlib pillow", "lcms2 pillow", "libtiff pillow", "openjpeg pillow", "libavif pillow",
+               "brotli pillow", "xz pillow", "libxcb pillow", "libxau pillow", "libzstd pillow", "libimagequant pillow"),
 }
 NOTICES_COLUMNS = ("Name", "Version", "Licence", "Home", "How it's used", "Used by")
 GPL_WORDS = ("gpl",)  # a licence naming GPL but not LGPL

@@ -62,9 +62,11 @@ STYLE_FILE = KIT / "assets" / "hrizzup.mplstyle"
 DPI = 100  # the chart's canvas: one pixel is 0.72 of a point
 STEP_ROWS = 5  # the steps template's rows
 # Tints of ink over paper, as the share of ink: a scale's bands go from light to dark; bars are TINT_OTHERS beside a highlight.
-# Every tint that is drawn passes the readable-text rule (WCAG 4.5 to 1) against the paper: `shade` raises a share that doesn't.
+# Every tint that is drawn passes a contrast rule against the paper: text (a label, a note) WCAG's 4.5 to 1, and a mark
+# (a bar's or a band's fill, a line) WCAG's 3 to 1 for graphics. `shade` raises a share that doesn't pass.
 TINT_LOW, TINT_HIGH, TINT_OTHERS = 0.14, 0.92, 0.38
-MIN_CONTRAST = 4.5
+MIN_CONTRAST = 4.5  # text
+GRAPHIC_CONTRAST = 3.0  # marks
 MARKER_VALUE = 84  # px, the scale marker's big value
 MARKER_LABEL = 26  # px, the words under it
 LINE = 1.22  # a line of text's height as a multiple of its size
@@ -309,25 +311,36 @@ def contrast(first, second):
     return (high + 0.05) / (low + 0.05)
 
 
-def readable_share(paper, ink, share=0.0, against=None):
-    """The smallest share of ink from `share` up (in hundredths) at which the tint of ink over paper has WCAG's
-    4.5 to 1 against `against` (the paper unless said): 1.0, the full ink, when none lighter does."""
+def readable_share(paper, ink, share=0.0, against=None, ratio=MIN_CONTRAST):
+    """The smallest share of ink from `share` up (in hundredths) at which the tint of ink over paper has `ratio` (WCAG's
+    4.5 to 1 for text, `GRAPHIC_CONTRAST` for a mark) against `against` (the paper unless said): 1.0, the full ink,
+    when none lighter does."""
     against = against or paper
     for hundredth in range(int(round(share * 100)), 100):
-        if contrast(mix(paper, ink, hundredth / 100), against) >= MIN_CONTRAST:
+        if contrast(mix(paper, ink, hundredth / 100), against) >= ratio:
             return hundredth / 100
     return 1.0
 
 
-def shade(paper, ink, share, against=None):
-    """A tint of ink over paper that reads against `against` (the paper unless said): the one at `share`, or the
-    lightest above it that has 4.5 to 1, or else the full ink. Lighter greys are for marks that stay readable."""
-    return mix(paper, ink, readable_share(paper, ink, share, against))
+def shade(paper, ink, share, against=None, ratio=MIN_CONTRAST):
+    """A tint of ink over paper that has `ratio` against `against` (the paper unless said): the one at `share`, or the
+    lightest above it that does, or else the full ink. Used for text (4.5 to 1, the default) and for lines and fills
+    that are not a ramp (pass `GRAPHIC_CONTRAST`)."""
+    return mix(paper, ink, readable_share(paper, ink, share, against, ratio))
+
+
+def band_fills(style, count):
+    """The fills of a scale's `count` bands, lowest first: the ramp of tints of ink from TINT_LOW to TINT_HIGH, its light end
+    raised only as far as WCAG's 3 to 1 for graphics against the paper (a fill is not text, so it needs no more). With
+    paler ink the ramp is shorter, and with ink that has less than 3 to 1 all the bands are the ink."""
+    floor = readable_share(style["paper"], style["ink"], ratio=GRAPHIC_CONTRAST)
+    return [mix(style["paper"], style["ink"], tint_for(number, count, floor)) for number in range(count)]
 
 
 def accent_on_paper(style):
-    """The accent where it is drawn on the paper (a highlight): the accent if it has 4.5 to 1 there, else the ink."""
-    return style["accent"] if contrast(style["accent"], style["paper"]) >= MIN_CONTRAST else style["ink"]
+    """The accent where it is drawn on the paper as a mark (a highlighted bar, a line): the accent if it has WCAG's
+    3 to 1 for graphics there, else the ink."""
+    return style["accent"] if contrast(style["accent"], style["paper"]) >= GRAPHIC_CONTRAST else style["ink"]
 
 
 def fit_labels(labels, role, widest, measure, wrap, largest, smallest, max_lines, where, row=None):
@@ -710,7 +723,7 @@ def draw_bar(chart, spec, style, hrizzup_draw, width, height):
     layout = bar_layout(spec["data"], spec["unit"], width, height, measure, wrap)
     ink, paper = style["ink"], style["paper"]
     marked = set(spec["highlight"] or [])
-    others = shade(paper, ink, TINT_OTHERS if marked else 0.86)
+    others = shade(paper, ink, TINT_OTHERS if marked else 0.86, ratio=GRAPHIC_CONTRAST)
     for row in layout["rows"]:
         colour = accent_on_paper(style) if row["label"] in marked else others
         chart.rectangle(row["x0"], row["y0"], row["x1"], row["y1"], colour)
@@ -724,7 +737,7 @@ def draw_column(chart, spec, style, hrizzup_draw, width, height):
     layout = column_layout(spec["data"], spec["unit"], width, height, measure, wrap)
     ink, paper = style["ink"], style["paper"]
     marked = set(spec["highlight"] or [])
-    others = shade(paper, ink, TINT_OTHERS if marked else 0.86)
+    others = shade(paper, ink, TINT_OTHERS if marked else 0.86, ratio=GRAPHIC_CONTRAST)
     for col in layout["cols"]:
         colour = accent_on_paper(style) if col["label"] in marked else others
         chart.rectangle(col["x0"], col["y0"], col["x1"], col["y1"], colour)
@@ -739,7 +752,7 @@ def draw_line(chart, spec, style, hrizzup_draw, width, height):
     ink, paper = style["ink"], style["paper"]
     stroke = accent_on_paper(style)
     points = layout["points"]
-    chart.line([(0, layout["base"]), (width, layout["base"])], shade(paper, ink, 0.5), 2)
+    chart.line([(0, layout["base"]), (width, layout["base"])], shade(paper, ink, 0.5, ratio=GRAPHIC_CONTRAST), 2)
     chart.line([(p["x"], p["y"]) for p in points], stroke, 6, cap="round")
     for number_ in layout["named"]:
         point = points[number_]
@@ -758,10 +771,10 @@ def draw_scale(chart, spec, style, hrizzup_draw, width, height):
     layout = scale_layout(spec, width, height, measure, wrap)
     ink, paper = style["ink"], style["paper"]
     highlight = accent_on_paper(style)
-    floor = readable_share(paper, ink)  # the lightest share of ink that reads on the paper: the ramp starts there
+    fills = band_fills(style, len(layout["bands"]))  # marks, not text: 3 to 1 on the paper, so the ramp keeps its range
     marker = layout["marker"]
     for number_, band in enumerate(layout["bands"]):
-        colour = shade(paper, ink, tint_for(number_, len(layout["bands"]), floor))
+        colour = fills[number_]
         if marker is not None and highlight != ink and marker["inside"] == number_:
             colour = highlight
         chart.rectangle(layout["bar_x0"], band["y0"], layout["bar_x1"], band["y1"], colour, edge=paper, edge_width=3)
