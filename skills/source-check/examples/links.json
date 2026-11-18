@@ -1,0 +1,62 @@
+[
+  {
+    "url": "https://example.com/sources/delhi-air-quality-monday-morning",
+    "finalUrl": "https://example.com/sources/delhi-air-quality-monday-morning",
+    "status": 404,
+    "ok": false,
+    "redirects": 0,
+    "contentType": "text/html",
+    "title": "Example Domain",
+    "lastModified": null,
+    "checkedAt": "2026-11-18T10:37:54Z",
+    "problem": "not found (404): the page is gone or the address is wrong"
+  },
+  {
+    "url": "https://example.com/sources/delhi-schools-notice",
+    "finalUrl": "https://example.com/sources/delhi-schools-notice",
+    "status": 404,
+    "ok": false,
+    "redirects": 0,
+    "contentType": "text/html",
+    "title": "Example Domain",
+    "lastModified": null,
+    "checkedAt": "2026-11-18T10:37:55Z",
+    "problem": "not found (404): the page is gone or the address is wrong"
+  },
+  {
+    "url": "https://example.org/posts/noida-parents-group",
+    "finalUrl": "https://example.org/posts/noida-parents-group",
+    "status": 404,
+    "ok": false,
+    "redirects": 0,
+    "contentType": "text/html",
+    "title": "Example Domain",
+    "lastModified": null,
+    "checkedAt": "2026-11-18T10:37:57Z",
+    "problem": "not found (404): the page is gone or the address is wrong"
+  },
+  {
+    "url": "https://example.com/sources/delhi-emergency-rules",
+    "finalUrl": "https://example.com/sources/delhi-emergency-rules",
+    "status": 404,
+    "ok": false,
+    "redirects": 0,
+    "contentType": "text/html",
+    "title": "Example Domain",
+    "lastModified": null,
+    "checkedAt": "2026-11-18T10:37:58Z",
+    "problem": "not found (404): the page is gone or the address is wrong"
+  },
+  {
+    "url": "https://example.com/sources/delhi-schools-clarification",
+    "finalUrl": "https://example.com/sources/delhi-schools-clarification",
+    "status": 404,
+    "ok": false,
+    "redirects": 0,
+    "contentType": "text/html",
+    "title": "Example Domain",
+    "lastModified": null,
+    "checkedAt": "2026-11-18T10:38:00Z",
+    "problem": "not found (404): the page is gone or the address is wrong"
+  }
+]

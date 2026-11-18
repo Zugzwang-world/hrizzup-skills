@@ -1,0 +1,50 @@
+[
+  {
+    "url": "https://example.com/",
+    "finalUrl": "https://example.com/",
+    "status": 200,
+    "ok": true,
+    "redirects": 0,
+    "contentType": "text/html",
+    "title": "Example Domain",
+    "lastModified": "Mon, 16 Nov 2026 00:30:20 GMT",
+    "checkedAt": "2026-11-18T10:38:02Z",
+    "problem": null
+  },
+  {
+    "url": "https://wikipedia.org/",
+    "finalUrl": "https://www.wikipedia.org/",
+    "status": 200,
+    "ok": true,
+    "redirects": 1,
+    "contentType": "text/html",
+    "title": "Wikipedia",
+    "lastModified": "Tue, 10 Nov 2026 07:56:33 GMT",
+    "checkedAt": "2026-11-18T10:38:03Z",
+    "problem": null
+  },
+  {
+    "url": "http://example.com/",
+    "finalUrl": null,
+    "status": null,
+    "ok": false,
+    "redirects": 0,
+    "contentType": null,
+    "title": null,
+    "lastModified": null,
+    "checkedAt": "2026-11-18T10:38:04Z",
+    "problem": "only https:// links are checked (this one is http://)"
+  },
+  {
+    "url": "https://www.iana.org/domains/example",
+    "finalUrl": "https://www.iana.org/domains/example",
+    "status": 301,
+    "ok": false,
+    "redirects": 0,
+    "contentType": "text/html",
+    "title": null,
+    "lastModified": null,
+    "checkedAt": "2026-11-18T10:38:04Z",
+    "problem": "redirects to http://www.iana.org/help/example-domains, not followed: only https:// links are checked (this one is http://)"
+  }
+]

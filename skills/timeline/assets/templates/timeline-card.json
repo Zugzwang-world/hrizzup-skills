@@ -1,0 +1,31 @@
+{
+  "id": "timeline-card",
+  "sizes": [[1080, 1350]],
+  "background": "paper",
+  "picture": null,
+  "texts": [
+    {"slot": "title", "box": [0.07, 0.05, 0.93, 0.165], "font": "text-bold", "max": 56, "min": 30, "lines": 3, "align": "left", "on": "paper", "case": "as-is"},
+    {"slot": "subtitle", "box": [0.07, 0.17, 0.93, 0.2], "font": "text", "max": 30, "min": 20, "lines": 1, "align": "left", "on": "paper", "case": "as-is"},
+    {"slot": "more", "box": [0.07, 0.205, 0.93, 0.238], "font": "text", "max": 26, "min": 18, "lines": 1, "align": "left", "on": "paper", "case": "as-is"},
+    {"slot": "when1", "box": [0.07, 0.255, 0.27, 0.307], "font": "text-bold", "max": 30, "min": 18, "lines": 2, "align": "left", "on": "paper", "case": "as-is"},
+    {"slot": "mark1", "box": [0.07, 0.31, 0.27, 0.355], "font": "text-bold", "max": 22, "min": 16, "lines": 3, "align": "left", "on": "paper", "case": "as-is"},
+    {"slot": "what1", "box": [0.3, 0.255, 0.93, 0.355], "font": "text", "max": 40, "min": 20, "lines": 3, "align": "left", "on": "paper", "case": "as-is"},
+    {"slot": "when2", "box": [0.07, 0.363, 0.27, 0.415], "font": "text-bold", "max": 30, "min": 18, "lines": 2, "align": "left", "on": "paper", "case": "as-is"},
+    {"slot": "mark2", "box": [0.07, 0.418, 0.27, 0.463], "font": "text-bold", "max": 22, "min": 16, "lines": 3, "align": "left", "on": "paper", "case": "as-is"},
+    {"slot": "what2", "box": [0.3, 0.363, 0.93, 0.463], "font": "text", "max": 40, "min": 20, "lines": 3, "align": "left", "on": "paper", "case": "as-is"},
+    {"slot": "when3", "box": [0.07, 0.471, 0.27, 0.523], "font": "text-bold", "max": 30, "min": 18, "lines": 2, "align": "left", "on": "paper", "case": "as-is"},
+    {"slot": "mark3", "box": [0.07, 0.526, 0.27, 0.571], "font": "text-bold", "max": 22, "min": 16, "lines": 3, "align": "left", "on": "paper", "case": "as-is"},
+    {"slot": "what3", "box": [0.3, 0.471, 0.93, 0.571], "font": "text", "max": 40, "min": 20, "lines": 3, "align": "left", "on": "paper", "case": "as-is"},
+    {"slot": "when4", "box": [0.07, 0.579, 0.27, 0.631], "font": "text-bold", "max": 30, "min": 18, "lines": 2, "align": "left", "on": "paper", "case": "as-is"},
+    {"slot": "mark4", "box": [0.07, 0.634, 0.27, 0.679], "font": "text-bold", "max": 22, "min": 16, "lines": 3, "align": "left", "on": "paper", "case": "as-is"},
+    {"slot": "what4", "box": [0.3, 0.579, 0.93, 0.679], "font": "text", "max": 40, "min": 20, "lines": 3, "align": "left", "on": "paper", "case": "as-is"},
+    {"slot": "when5", "box": [0.07, 0.687, 0.27, 0.739], "font": "text-bold", "max": 30, "min": 18, "lines": 2, "align": "left", "on": "paper", "case": "as-is"},
+    {"slot": "mark5", "box": [0.07, 0.742, 0.27, 0.787], "font": "text-bold", "max": 22, "min": 16, "lines": 3, "align": "left", "on": "paper", "case": "as-is"},
+    {"slot": "what5", "box": [0.3, 0.687, 0.93, 0.787], "font": "text", "max": 40, "min": 20, "lines": 3, "align": "left", "on": "paper", "case": "as-is"},
+    {"slot": "when6", "box": [0.07, 0.795, 0.27, 0.847], "font": "text-bold", "max": 30, "min": 18, "lines": 2, "align": "left", "on": "paper", "case": "as-is"},
+    {"slot": "mark6", "box": [0.07, 0.85, 0.27, 0.895], "font": "text-bold", "max": 22, "min": 16, "lines": 3, "align": "left", "on": "paper", "case": "as-is"},
+    {"slot": "what6", "box": [0.3, 0.795, 0.93, 0.895], "font": "text", "max": 40, "min": 20, "lines": 3, "align": "left", "on": "paper", "case": "as-is"},
+    {"slot": "note", "box": [0.07, 0.915, 0.62, 0.97], "font": "text", "max": 24, "min": 16, "lines": 2, "align": "left", "on": "paper", "case": "as-is"}
+  ],
+  "signature": {"box": [0.64, 0.915, 0.93, 0.97], "align": "right"}
+}

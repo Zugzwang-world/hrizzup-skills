@@ -50,6 +50,14 @@ def copy_real(root, *names):
         put(root, name, (REAL / name).read_bytes())
 
 
+def notices_without_rows():
+    """The real NOTICES.md up to its table's header line. A test adds the rows it needs, so what it proves
+    doesn't depend on which packages and fonts the repository's own table lists."""
+    lines = (REAL / "NOTICES.md").read_text(encoding="utf-8").split("\n")
+    end = next(i for i, line in enumerate(lines) if re.match(r"^\|[-| :]+\|$", line))
+    return "\n".join(lines[:end + 1]) + "\n"
+
+
 HI_PY = '''#!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.10"
@@ -159,6 +167,7 @@ def build_golden(root):
     copy_real(root, ".gitattributes", ".gitignore", "README.md", "NOTICES.md", "retired.txt", "shared/rules.md",
               "shared/agent-intro.md", "shared/references/sizes.md", "shared/scripts/hrizzup_media.py",
               ".github/workflows/checks.yml")
+    put(root, "NOTICES.md", notices_without_rows())
     put(root, "skills/hello/SKILL.md", SKILL_MD)
     put(root, "skills/hello/scripts/hi.py", HI_PY)
     put(root, "skills/hello/scripts/hrizzup_media.py", "# an old copy\n")  # opts in; `write` overwrites it
@@ -808,7 +817,7 @@ class Locks(Repo):
         put(self.root, base + ".lock", lock_text(packages))
         put(self.root, base[:-3] + ".requirements.txt", requirements_text(packages))
         rows = notices if notices is not None else "".join(notice(n, v[0]) for n, v in packages.items())
-        put(self.root, "NOTICES.md", (REAL / "NOTICES.md").read_text(encoding="utf-8") + rows)
+        put(self.root, "NOTICES.md", notices_without_rows() + rows)
         need = "The first run downloads nothing."
         no_uv = " On a machine without uv: `python3.12 -m venv .venv`, then `.venv/bin/python -m pip install --require-hashes -r scripts/%s.requirements.txt`." % name[:-3]
         put(self.root, "skills/hello/SKILL.md", SKILL_MD.replace(need, need + no_uv))

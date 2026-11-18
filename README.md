@@ -19,6 +19,10 @@ Whichever way, run a skill's commands from its folder. A skill's `## What you ne
 <!-- catalogue:start -->
 | Name | Kind | What it does | What it needs | Folder |
 |---|---|---|---|---|
+| Breakdown | Skill | A short written take on what's new in a story and why it matters, with what is known, what is not, and the sources. | Nothing | [skills/breakdown](skills/breakdown) |
+| Source check | Skill | Lists the links behind every claim, says what was checked about each, and asks for working sources where there are none. | Nothing | [skills/source-check](skills/source-check) |
+| Timeline | Skill | The story so far as a dated timeline: one line for each update, oldest first, corrections marked and every line sourced. Optional card. | Nothing | [skills/timeline](skills/timeline) |
+| Translate | Skill | Turns other-language reports into clear English posts that say they are translations, keep every doubt, and add nothing. | Nothing | [skills/translate](skills/translate) |
 <!-- catalogue:end -->
 
 Skills that make pictures, audio or video run Python scripts: install [uv](https://docs.astral.sh/uv/) (`pip install uv`) and run `uv run scripts/<name>.py --help` from the skill's folder. The first run downloads the packages (and, for voice and captions, a speech model) and says how big they are. Without uv, each script has a `<name>.requirements.txt` that pins every package with its checksum: make a virtual environment and `pip install --require-hashes -r scripts/<name>.requirements.txt` into it. The skills that only need to read (a breakdown, a translation) need nothing installed.

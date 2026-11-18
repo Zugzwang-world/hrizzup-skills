@@ -1,0 +1,9 @@
+{
+  "storyId": "01a199e9-d180-75ec-8a81-134dd403419a",
+  "kind": "text",
+  "format": "translation",
+  "body": "Translated from Hindi. This is a short notice; its text follows.\n\nAir-quality readings in Delhi NCR have gone past 450. This is called the 'severe' (गंभीर) level.\n\nClasses at Delhi's primary schools are now running online. Schools in Noida and Gurugram (गुरुग्राम) will stay open.\n\nBuilding work has reportedly stopped, and diesel trucks have reportedly been kept out of Delhi.\n\nMore information: https://example.com/sources/delhi-schools-clarification\n\nTranslator's notes: \"Reportedly\" translates the Hindi for \"it is being reported\". Nothing has been added to the notice.",
+  "sources": [
+    "https://example.com/sources/delhi-schools-clarification"
+  ]
+}
