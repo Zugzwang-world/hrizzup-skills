@@ -4,7 +4,8 @@
 # It runs the timeline card, the meme and the infographic on the samples' own inputs, twice: once with
 # `uv run --locked` (the lock beside each script) and once with plain pip from each script's hashed
 # requirements file in a fresh virtual environment. Every picture is read back with the repository's own
-# media reader, and kept as an artifact. The work is in tools/kits_run.py, which also runs on a Mac.
+# media reader, and kept as an artifact. The work is in tools/kits_run.py, which also runs on a Mac; its pip way also
+# prints whether Pillow's wheel has libimagequant here (NOTICES.md's row for it says what was checked on a Mac).
 # It then runs the whole unit-test suite with the packages installed (the infographic's set holds every
 # package the meme and the timeline need too), so the tests the offline check has to skip run here.
 #

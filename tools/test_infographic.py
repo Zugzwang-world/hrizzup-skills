@@ -577,6 +577,191 @@ class LineLabels(unittest.TestCase):
         self.assertTrue(info.boxes_overlap((0, 0, 10, 10), (10, 0, 20, 10), 2))
 
 
+class Header(unittest.TestCase):
+    """The subtitle follows the title as drawn, and the body starts under the header (M3's last polish)."""
+
+    H = 1350
+    SIZE = (1080, 1350)
+    # What the drawing module fits: one and two lines at 60 px (a line box is 1.25 of the size), three lines at 48 px.
+    HEIGHTS = {1: 75, 2: 150, 3: 180}
+
+    def line(self, size=60):
+        return int(round(size * 1.25))  # hrizzup_draw.line_height
+
+    def placed(self, name, title_lines, subtitle=True):
+        return info.place_header(template(name), self.SIZE, self.HEIGHTS[title_lines], 40 if subtitle else 0)
+
+    def slot(self, tmpl, name):
+        return next(t for t in tmpl["texts"] if t["slot"] == name)["box"]
+
+    def test_the_subtitle_sits_the_normal_gap_under_the_title_as_drawn_whatever_its_length(self):
+        for name in ("chart-card", "steps-card"):
+            for lines in (1, 2, 3):
+                tmpl, _body = self.placed(name, lines)
+                title_bottom = self.slot(template(name), "title")[1] * self.H + self.HEIGHTS[lines]
+                top = self.slot(tmpl, "subtitle")[1] * self.H
+                self.assertAlmostEqual(top - title_bottom, info.HEADER_GAP * self.H, places=6, msg=(name, lines))
+
+    def test_a_one_line_title_no_longer_leaves_two_lines_of_room_before_the_subtitle(self):
+        one, _ = self.placed("chart-card", 1)
+        two, _ = self.placed("chart-card", 2)
+        base = template("chart-card")
+        gap_before = (self.slot(base, "subtitle")[1] - self.slot(base, "title")[1]) * self.H - self.line()  # the old gap under one line
+        gap_now = (self.slot(one, "subtitle")[1] - self.slot(one, "title")[1]) * self.H - self.line()
+        self.assertGreater(gap_before, 120)  # about 150 px, as seen
+        self.assertLess(gap_now, 40)
+        self.assertAlmostEqual((self.slot(two, "subtitle")[1] - self.slot(one, "subtitle")[1]) * self.H, self.line(), places=6)
+
+    def test_the_subtitle_box_keeps_its_size_and_stays_on_the_card(self):
+        base = template("chart-card")
+        for lines in (1, 2, 3):
+            tmpl, _ = self.placed("chart-card", lines)
+            before, after = self.slot(base, "subtitle"), self.slot(tmpl, "subtitle")
+            self.assertAlmostEqual(before[3] - before[1], after[3] - after[1], places=9)
+            self.assertEqual((before[0], before[2]), (after[0], after[2]))
+            drawn_bottom = after[1] * self.H + 40  # the subtitle as drawn (40 px here) ends above the chart place
+            self.assertLess(drawn_bottom, tmpl["picture"]["box"][1] * self.H)
+            self.assertGreater(after[1], self.slot(tmpl, "title")[1])
+
+    def test_the_chart_place_starts_under_the_header_and_is_taller_when_the_header_is_short(self):
+        base_top = template("chart-card")["picture"]["box"][1]
+        tops = []
+        for lines in (1, 2, 3):
+            tmpl, body = self.placed("chart-card", lines)
+            top = tmpl["picture"]["box"][1]
+            self.assertEqual(top, body if body < base_top else base_top)
+            self.assertLessEqual(top, base_top)  # never a shorter chart place than the template's
+            tops.append(top)
+        self.assertEqual(tops, sorted(tops))  # a longer title pushes the chart down
+        self.assertLess(tops[0], base_top)  # and a one-line title gives the chart room
+        self.assertEqual(template("chart-card")["picture"]["box"][3], placed_bottom(self.placed("chart-card", 1)[0]))  # its foot is where it was
+
+    def test_without_a_subtitle_the_body_follows_the_title(self):
+        with_sub = self.placed("chart-card", 1)[1]
+        without = self.placed("chart-card", 1, subtitle=False)[1]
+        self.assertLess(without, with_sub)
+        self.assertAlmostEqual(without, (0.05 * self.H + self.line() + info.BODY_GAP * self.H) / self.H, places=9)
+
+    def test_the_steps_rows_start_under_the_header_and_the_group_is_centred(self):
+        base = template("steps-card")
+        for lines in (1, 2, 3):
+            tmpl, body = self.placed("steps-card", lines)
+            for count in (2, 3, 5):
+                spread, rules = info.spread_steps(tmpl, count, body)
+                slots = {t["slot"]: t["box"] for t in spread["texts"]}
+                first, last = slots["step1"][1], slots["step%d" % count][3]
+                self.assertGreaterEqual(first, body - 1e-9, (lines, count))  # under the header
+                self.assertLessEqual(last, template("steps-card")["texts"][-3]["box"][3] + 1e-9)  # and above the source
+                for row in range(1, count):
+                    self.assertLessEqual(slots["step%d" % row][3], slots["step%d" % (row + 1)][1] + 1e-9)
+                    self.assertTrue(slots["step%d" % row][3] <= rules[row - 1] <= slots["step%d" % (row + 1)][1] + 1e-9)
+                # centred: the spare room above the first row and below the last (with the gap under it) is the same
+                top = min(body, self.slot(base, "n1")[1])
+                gap = self.slot(base, "n2")[1] - self.slot(base, "n1")[3]
+                span = self.slot(base, "n5")[3] - top + gap
+                pitch = slots["step2"][1] - slots["step1"][1] if count > 1 else 0
+                above, below = first - top, top + span - (first + count * pitch)
+                self.assertGreaterEqual(above, -1e-9)
+                self.assertAlmostEqual(above, below, places=9, msg=(lines, count))
+
+    def test_two_steps_are_not_left_at_the_top_of_their_space(self):
+        tmpl, body = self.placed("steps-card", 2)
+        spread, _rules = info.spread_steps(tmpl, 2, body)
+        top = next(t for t in spread["texts"] if t["slot"] == "step1")["box"][1]
+        self.assertGreater(top, body + 0.02)  # moved down to the middle of the space
+
+    def test_the_stat_block_moves_up_by_half_the_room_the_title_did_not_use(self):
+        base = template("stat-card")
+        title_bottom = self.slot(base, "title")[3]
+        full, _ = info.place_header(base, self.SIZE, (title_bottom - self.slot(base, "title")[1]) * self.H, 0)  # a title that fills its box
+        self.assertEqual(self.slot(full, "value"), self.slot(base, "value"))  # nothing to give back
+        one, _ = info.place_header(base, self.SIZE, self.line(52), 0)
+        moved = (self.slot(base, "value")[1] - self.slot(one, "value")[1]) * self.H
+        unused = (title_bottom * self.H - (self.slot(base, "title")[1] * self.H + self.line(52))) / 2
+        self.assertAlmostEqual(moved, unused, places=6)
+        for name in ("value", "label", "note"):
+            a, b = self.slot(base, name), self.slot(one, name)
+            self.assertAlmostEqual((a[1] - b[1]), (a[3] - b[3]), places=9)  # each keeps its size
+        self.assertGreater(self.slot(one, "value")[1], self.slot(one, "title")[1] + self.line(52) / self.H)  # still under the title
+        self.assertLess(self.slot(one, "note")[3], self.slot(one, "source")[1])  # and over the source
+
+    def test_the_template_is_left_alone(self):
+        base = template("chart-card")
+        before = copy.deepcopy(base)
+        info.place_header(base, self.SIZE, 75, 38)
+        self.assertEqual(base, before)
+
+
+def placed_bottom(tmpl):
+    return tmpl["picture"]["box"][3]
+
+
+class Spread(unittest.TestCase):
+    """Bars and columns spread to fill their place; when their spacing is capped the group is centred."""
+
+    def bars(self, count, height=742, width=928):
+        items = [{"label": "City %d" % n, "value": 100 - n, "text": None} for n in range(count)]
+        return info.bar_layout(items, "AQI", width, height, measure, wrap)
+
+    def columns(self, count, height=594, width=928):
+        items = [{"label": "C%d" % n, "value": 100 - n, "text": None} for n in range(count)]
+        return info.column_layout(items, "AQI", width, height, measure, wrap)
+
+    def test_2_4_and_12_bars_fill_their_place_or_are_centred_in_it(self):
+        for height in (742, 594, 877):
+            for count in (2, 4, 12):
+                layout = self.bars(count, height)
+                rows = layout["rows"]
+                top_margin, bottom_margin = layout["top"], height - layout["bottom"]
+                self.assertAlmostEqual(top_margin, bottom_margin, places=6, msg=(count, height))  # always centred
+                self.assertLessEqual(layout["pitch"], info.BAR_PITCH_MAX)
+                self.assertAlmostEqual(layout["pitch"], min(height / count, info.BAR_PITCH_MAX), places=6)
+                self.assertTrue(all(r["y1"] - r["y0"] <= info.BAR_THICK_MAX + 1e-9 for r in rows))
+                self.assertAlmostEqual(rows[1]["centre"] - rows[0]["centre"], layout["pitch"], places=6)
+                for a, b in zip(rows, rows[1:]):
+                    self.assertLess(a["y1"], b["y0"])
+                self.assertTrue(rows[0]["y0"] >= 0 and rows[-1]["y1"] <= height)
+
+    def test_twelve_bars_fill_the_whole_place_and_four_fill_most_of_it(self):
+        twelve = self.bars(12)
+        self.assertAlmostEqual(twelve["top"], 0, places=6)
+        self.assertAlmostEqual(twelve["bottom"], 742, places=6)
+        four = self.bars(4)
+        self.assertGreater((four["bottom"] - four["top"]) / 742, 0.85)  # not the top half of the place, as before
+        self.assertGreater(four["top"], 0)  # centred: some room both above and below
+        two = self.bars(2)
+        self.assertEqual(two["pitch"], info.BAR_PITCH_MAX)  # capped: the pair is centred, not stretched
+        self.assertAlmostEqual(two["top"], (742 - 2 * info.BAR_PITCH_MAX) / 2, places=6)
+
+    def test_a_thick_bar_is_capped_and_a_thin_one_is_in_proportion_to_its_row(self):
+        two, twelve = self.bars(2), self.bars(12)
+        self.assertEqual(two["rows"][0]["y1"] - two["rows"][0]["y0"], info.BAR_THICK_MAX)
+        self.assertAlmostEqual(twelve["rows"][0]["y1"] - twelve["rows"][0]["y0"], twelve["pitch"] * 0.62, places=6)
+
+    def test_the_bars_zero_line_spans_the_group(self):
+        layout = self.bars(4)
+        self.assertEqual((layout["top"], layout["bottom"]), (layout["rows"][0]["centre"] - layout["pitch"] / 2, layout["rows"][-1]["centre"] + layout["pitch"] / 2))
+
+    def test_2_4_and_8_columns_spread_across_their_place_or_are_centred_in_it(self):
+        for width in (928, 800):
+            for count in (2, 4, 8):
+                layout = self.columns(count, width=width)
+                cols = layout["cols"]
+                self.assertAlmostEqual(layout["left"], width - layout["right"], places=6, msg=(count, width))  # centred
+                self.assertLessEqual(layout["slot"], info.COLUMN_SLOT_MAX)
+                self.assertAlmostEqual(layout["slot"], min(width / count, info.COLUMN_SLOT_MAX), places=6)
+                self.assertTrue(all(c["x1"] - c["x0"] <= info.COLUMN_WIDTH_MAX + 1e-9 for c in cols))
+                self.assertTrue(cols[0]["x0"] >= layout["left"] and cols[-1]["x1"] <= layout["right"])
+                for a, b in zip(cols, cols[1:]):
+                    self.assertLess(a["x1"], b["x0"])
+        eight = self.columns(8)
+        self.assertAlmostEqual(eight["left"], 0, places=6)  # eight fill the width
+        self.assertAlmostEqual(eight["right"], 928, places=6)
+        two = self.columns(2)
+        self.assertEqual(two["slot"], info.COLUMN_SLOT_MAX)  # two are a pair in the middle, not far apart
+        self.assertGreater(two["left"], 200)
+
+
 class Templates(unittest.TestCase):
     def test_each_template_follows_the_design_and_is_on_disk(self):
         folder = os.path.join(KIT, "assets", "templates")
@@ -780,6 +965,12 @@ class Pictures(unittest.TestCase):
         self.folder = tempfile.mkdtemp(prefix="infographic-test-")
         self.addCleanup(__import__("shutil").rmtree, self.folder, True)
 
+    def centre(self):
+        """The middle of the chart's place on a card whose title is one short line and which has no subtitle."""
+        placed, _body = info.place_header(template("chart-card"), (1080, 1350), 75, 0)
+        box = placed["picture"]["box"]
+        return int((box[1] + box[3]) / 2 * 1350)
+
     def run_with_image(self, image, name="own.png", style=None, **options):
         spec = {"template": "chart-card", "title": "T", "source": "S", "image": name}
         with open(os.path.join(self.folder, "spec.json"), "w", encoding="utf-8") as f:
@@ -798,7 +989,7 @@ class Pictures(unittest.TestCase):
         code, report = self.run_with_image(Image.new("RGBA", (200, 100), (255, 0, 0, 0)), style={"paper": "#EEDDCC"})
         self.assertEqual(code, 0, report)
         card = Image.open(os.path.join(self.folder, "card.png")).convert("RGB")
-        self.assertEqual(card.getpixel((540, 756)), (0xEE, 0xDD, 0xCC))  # the middle of the chart's place: paper, not black or white
+        self.assertEqual(card.getpixel((540, self.centre())), (0xEE, 0xDD, 0xCC))  # the middle of the chart's place: paper, not black or white
 
     def test_a_16_bit_grey_picture_is_scaled_not_clipped(self):
         from PIL import Image
@@ -807,7 +998,7 @@ class Pictures(unittest.TestCase):
         code, report = self.run_with_image(grey)
         self.assertEqual(code, 0, report)
         card = Image.open(os.path.join(self.folder, "card.png")).convert("RGB")
-        self.assertEqual(card.getpixel((540, 756)), (128, 128, 128))  # half grey, not white
+        self.assertEqual(card.getpixel((540, self.centre())), (128, 128, 128))  # half grey, not white
 
     def test_a_picture_that_is_not_a_png_jpeg_or_webp_exits_2(self):
         from PIL import Image
@@ -840,6 +1031,69 @@ class Pictures(unittest.TestCase):
                 code, report = run_main(["--spec", os.path.join(self.folder, "spec.json"), "--out", link])
             self.assertEqual((code, "overwrite" in report["problem"]), (2, True), make_link.__name__)
         self.assertEqual(open(picture, "rb").read(), before)
+
+
+@unittest.skipUnless(have("PIL", "fontTools", "matplotlib", "numpy"), "needs Pillow, fontTools, matplotlib and numpy")
+class Looks(unittest.TestCase):
+    """What a short chart looks like when drawn: a composed card, not a small chart at the top of a big gap."""
+
+    def setUp(self):
+        self.folder = tempfile.mkdtemp(prefix="infographic-look-")
+        self.addCleanup(__import__("shutil").rmtree, self.folder, True)
+        # matplotlib is imported here, not inside the patch below: mock.patch.dict forgets every module imported
+        # while it is active, and a package half forgotten and imported again is two packages
+        import matplotlib.backends.backend_agg, matplotlib.figure, matplotlib.font_manager, matplotlib.patches, matplotlib.style  # noqa: E401,F401
+
+    def card(self, spec, size="1080x1350"):
+        from PIL import Image
+        path = os.path.join(self.folder, "spec.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(spec, f)
+        out = os.path.join(self.folder, "card.png")
+        with mock.patch.dict(sys.modules, {"hrizzup_draw": own_draw()}):
+            code, report = run_main(["--spec", path, "--size", size, "--out", out])
+        self.assertEqual(code, 0, report)
+        return Image.open(out).convert("L")
+
+    def runs(self, image, x0, x1, y0, y1, merge=36):
+        """The vertical runs of dark rows between y0 and y1 (rows with a pixel under 140 in x0..x1), nearby ones joined."""
+        pixels = image.load()
+        dark = [y for y in range(y0, y1) if any(pixels[x, y] < 140 for x in range(x0, x1, 2))]
+        runs = []
+        for y in dark:
+            if runs and y - runs[-1][1] <= merge:
+                runs[-1][1] = y
+            else:
+                runs.append([y, y])
+        return runs
+
+    def bars(self, count, title="Readings at 9 am on Monday"):
+        return {"template": "chart-card", "title": title, "subtitle": "Air Quality Index", "source": "Illustrative figures",
+                "chart": {"type": "bar", "unit": "AQI", "data": [{"label": "City %d" % n, "value": 470 - 7 * n} for n in range(count)]}}
+
+    def test_the_subtitle_follows_a_one_line_title_closely(self):
+        runs = self.runs(self.card(self.bars(4)), 76, 1004, 40, 330)
+        self.assertEqual(len(runs), 2, runs)  # the title and the subtitle, nothing else up there
+        self.assertLess(runs[1][0] - runs[0][1], 80)  # about 40 px; it was about 150
+
+    def test_and_a_two_line_title_too(self):
+        runs = self.runs(self.card(self.bars(4, "Readings across Delhi NCR at nine in the morning on Monday 2 November")), 76, 1004, 40, 330)
+        self.assertEqual(len(runs), 2, runs)
+        self.assertLess(runs[1][0] - runs[0][1], 80)
+
+    def test_four_bars_fill_most_of_their_place_and_the_chart_is_not_left_blank_above_the_source(self):
+        card = self.card(self.bars(4))
+        axis = self.runs(card, 400, 430, 250, 1140, merge=5)  # the zero line is the long dark run at the bars' left edge
+        top, bottom = axis[0][0], axis[-1][1]
+        self.assertGreater(bottom - top, 600)  # four bars of 168 px; before, 448
+        self.assertLess(1154 - bottom, 170)  # the blank band above the source line: about 300 before
+
+    def test_two_and_twelve_bars_are_composed_too(self):
+        two = self.runs(self.card(self.bars(2)), 400, 430, 250, 1140, merge=5)
+        top, bottom = two[0][0], two[-1][1]
+        self.assertAlmostEqual(bottom - top, 2 * info.BAR_PITCH_MAX, delta=30)  # the pair is not stretched
+        twelve = self.runs(self.card(self.bars(12)), 400, 430, 250, 1140, merge=5)
+        self.assertGreater(twelve[-1][1] - twelve[0][0], 780)  # twelve fill the place
 
 
 class Command(unittest.TestCase):

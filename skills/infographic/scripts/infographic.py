@@ -70,6 +70,12 @@ GRAPHIC_CONTRAST = 3.0  # marks
 MARKER_VALUE = 84  # px, the scale marker's big value
 MARKER_LABEL = 26  # px, the words under it
 LINE = 1.22  # a line of text's height as a multiple of its size
+HEADER_GAP = 0.018  # of the card's height: from the title as drawn to the subtitle
+BODY_GAP = 0.032  # of the card's height: from the header as drawn to the chart, the steps or the number
+BAR_PITCH_MAX = 168.0  # px from one bar to the next; bars (and columns) spread to fill their place up to this
+BAR_THICK_MAX = 88.0  # px, a bar's own thickness
+COLUMN_SLOT_MAX = 220.0  # px from one column's middle to the next's
+COLUMN_WIDTH_MAX = 140.0  # px, a column's own width
 
 
 class InputError(Exception):
@@ -360,7 +366,8 @@ def fit_labels(labels, role, widest, measure, wrap, largest, smallest, max_lines
 def bar_layout(items, unit, width, height, measure, wrap):
     """Horizontal bars from zero, each labelled at the left and with its value at its end."""
     count = len(items)
-    row = min(height / count, 112.0)
+    row = min(height / count, BAR_PITCH_MAX)  # the bars spread over their place, and when that is capped the group is centred
+    top_edge = (height - row * count) / 2
     column = width * 0.34
     size, lines = fit_labels([i["label"] for i in items], "text", column, measure, wrap, 32, 18, 2, "the bar chart", row=row)
     value_size = min(36, size + 4)
@@ -371,23 +378,24 @@ def bar_layout(items, unit, width, height, measure, wrap):
     if longest < 120:
         raise TooLong("the bar chart: the value labels are too wide: shorten the unit or the \"text\" of each value")
     top = max(i["value"] for i in items)
-    thick = min(row * 0.62, 64.0)
+    thick = min(row * 0.62, BAR_THICK_MAX)
     rows = []
     for number_, (item, found, text) in enumerate(zip(items, lines, texts)):
         length = item["value"] / top * longest
         if item["value"] > 0:
             length = max(length, 4.0)
-        centre = row * (number_ + 0.5)
+        centre = top_edge + row * (number_ + 0.5)
         rows.append({"label": item["label"], "lines": found, "value": text, "x0": left, "x1": left + length,
                      "y0": centre - thick / 2, "y1": centre + thick / 2, "centre": centre})
     return {"label_size": size, "value_size": value_size, "label_right": column, "rows": rows, "left": left,
-            "bottom": row * count}
+            "top": top_edge, "bottom": top_edge + row * count, "pitch": row}
 
 
 def column_layout(items, unit, width, height, measure, wrap):
     """Vertical columns from zero, each labelled beneath and with its value above."""
     count = len(items)
-    slot = width / count
+    slot = min(width / count, COLUMN_SLOT_MAX)  # the columns spread over their place, and when that is capped the group is centred
+    left_edge = (width - slot * count) / 2
     size, lines = fit_labels([i["label"] for i in items], "text", slot * 0.92, measure, wrap, 30, 20, 3, "the column chart")
     label_height = max(len(found) for found in lines) * size * LINE
     texts = [value_text(i, unit) for i in items]
@@ -402,16 +410,17 @@ def column_layout(items, unit, width, height, measure, wrap):
     if room < 80:
         raise TooLong("the column chart: not enough height for its labels: shorten them")
     top = max(i["value"] for i in items)
-    wide = min(slot * 0.62, 130.0)
+    wide = min(slot * 0.62, COLUMN_WIDTH_MAX)
     cols = []
     for number_, (item, found, text) in enumerate(zip(items, lines, texts)):
-        centre = slot * (number_ + 0.5)
+        centre = left_edge + slot * (number_ + 0.5)
         tall = item["value"] / top * room
         if item["value"] > 0:
             tall = max(tall, 4.0)
         cols.append({"label": item["label"], "lines": found, "value": text, "x0": centre - wide / 2, "x1": centre + wide / 2,
                      "y0": base - tall, "y1": base, "centre": centre})
-    return {"label_size": size, "value_size": value_size, "base": base, "cols": cols}
+    return {"label_size": size, "value_size": value_size, "base": base, "cols": cols, "left": left_edge,
+            "right": left_edge + slot * count, "slot": slot}
 
 
 def segment_hits_box(start, end, box, clearance=0.0):
@@ -589,26 +598,74 @@ def scale_layout(chart, width, height, measure, wrap):
             "marker": placed, "left_col": left_col}
 
 
-def spread_steps(template, count):
+def spread_steps(template, count, top=None):
     """The template has five rows; for fewer steps, spread the rows over the same space (each at most one and a
-    half times as tall as the template's) and drop the rows that aren't used. Returns (template, [y of each rule
-    between rows, as a fraction of the height])."""
+    half times as tall as the template's), centred in it, and drop the rows that aren't used. `top` (a fraction of the
+    height) is where the rows may start: the space under the header as drawn, never lower than the template's own first
+    row. Returns (template, [y of each rule between rows, as a fraction of the height])."""
     spread = copy.deepcopy(template)
     slots = {t["slot"]: t for t in spread["texts"]}
-    first, second = slots["n1"]["box"][1], slots["n2"]["box"][1]
-    band = second - first
+    template_first, second = slots["n1"]["box"][1], slots["n2"]["box"][1]
+    band = second - template_first
+    row_height = slots["n1"]["box"][3] - template_first
+    gap = band - row_height
     last = slots["n%d" % STEP_ROWS]["box"][3]
-    height = min((last - first + (band - (slots["n1"]["box"][3] - first))) / count, band * 1.5)
+    first = template_first if top is None else min(top, template_first)
+    span = last - first + gap  # the space the rows share, with the gap under the last
+    height = min(span / count, band * 1.5)
     scale = height / band
+    start = first + (span - height * count) / 2  # the group is centred in the space when the rows are capped
     for row in range(1, STEP_ROWS + 1):
-        old, new = first + (row - 1) * band, first + (row - 1) * height
+        old, new = template_first + (row - 1) * band, start + (row - 1) * height
         for kind in ("n", "step"):
             box = slots["%s%d" % (kind, row)]["box"]
             box[1], box[3] = new + (box[1] - old) * scale, new + (box[3] - old) * scale
     spread["texts"] = [t for t in spread["texts"] if not (re.fullmatch(r"(?:n|step)\d", t["slot"]) and int(t["slot"][-1]) > count)]
-    rule_gap = (band - (slots["n1"]["box"][3] - slots["n1"]["box"][1]) / scale) * scale / 2
-    rules = [first + k * height - rule_gap for k in range(1, count)]
+    rules = [start + (k - 1) * height + (height + row_height * scale) / 2 for k in range(1, count)]  # between two rows
     return spread, rules
+
+
+def place_header(template, size, title_px, subtitle_px):
+    """The template with its header laid out as it is drawn: the subtitle follows the title's drawn height (`title_px`) at the
+    normal gap, not the room the template keeps for three lines, and the body starts under the header. Returns
+    (template, the top of the body as a fraction of the height). A chart-card's chart place begins there (never lower than
+    the template's own); a steps-card's rows begin there (see `spread_steps`); a stat-card's number block moves up by half
+    of the room the title didn't use, so it stays centred between the title and the source. Only the title and the subtitle
+    are measured: `subtitle_px` is 0 for a card with none."""
+    placed = copy.deepcopy(template)
+    height = size[1]
+    slots = {t["slot"]: t for t in placed["texts"]}
+    title = slots["title"]
+    title_bottom = title["box"][1] * height + title_px
+    bottom = title_bottom
+    if subtitle_px and "subtitle" in slots:
+        box = slots["subtitle"]["box"]
+        tall = box[3] - box[1]
+        top = title_bottom + HEADER_GAP * height
+        box[1], box[3] = top / height, top / height + tall
+        bottom = top + subtitle_px
+    body = (bottom + BODY_GAP * height) / height
+    if placed["picture"] is not None:
+        box = placed["picture"]["box"]
+        box[1] = min(body, box[1])  # a taller chart place when the header is short, never a shorter one than the template's
+    if "value" in slots:
+        unused = (title["box"][3] * height - title_bottom) / 2  # half the room the title left, so the number block moves up
+        for slot in ("value", "label", "note"):
+            if slot in slots:
+                box = slots[slot]["box"]
+                box[1], box[3] = box[1] - unused / height, box[3] - unused / height
+    return placed, body
+
+
+def drawn_height(hrizzup_draw, style, template, size, slot, text):
+    """How tall a slot's text is drawn (the fitted lines), found the way the drawing module will fit it."""
+    spec = next(t for t in template["texts"] if t["slot"] == slot)
+    box = spec["box"]
+    shown = text.upper() if spec["case"] == "upper" else text
+    fitted = hrizzup_draw.fit_text(shown, spec["font"], style, ((box[2] - box[0]) * size[0], (box[3] - box[1]) * size[1]),
+                                   spec["max"], spec["min"], spec["lines"], outline=spec["on"] == "picture",
+                                   where="the \"%s\" text" % slot)
+    return fitted.height
 
 
 # ---------------------------------------------------------------------------------------------
@@ -729,7 +786,7 @@ def draw_bar(chart, spec, style, hrizzup_draw, width, height):
         chart.rectangle(row["x0"], row["y0"], row["x1"], row["y1"], colour)
         chart.text(layout["label_right"], row["centre"], "\n".join(row["lines"]), "text", layout["label_size"], ink, align="right")
         chart.text(row["x1"] + 14, row["centre"], row["value"], "text-bold", layout["value_size"], ink)
-    chart.line([(layout["left"], 0), (layout["left"], layout["bottom"])], ink, 3)  # the zero line
+    chart.line([(layout["left"], layout["top"]), (layout["left"], layout["bottom"])], ink, 3)  # the zero line
 
 
 def draw_column(chart, spec, style, hrizzup_draw, width, height):
@@ -743,7 +800,7 @@ def draw_column(chart, spec, style, hrizzup_draw, width, height):
         chart.rectangle(col["x0"], col["y0"], col["x1"], col["y1"], colour)
         chart.text(col["centre"], col["y0"] - 10, col["value"], "text-bold", layout["value_size"], ink, align="center", valign="bottom")
         chart.text(col["centre"], layout["base"] + 14, "\n".join(col["lines"]), "text", layout["label_size"], ink, align="center", valign="top")
-    chart.line([(0, layout["base"]), (width, layout["base"])], ink, 3)  # the zero line
+    chart.line([(layout["left"], layout["base"]), (layout["right"], layout["base"])], ink, 3)  # the zero line
 
 
 def draw_line(chart, spec, style, hrizzup_draw, width, height):
@@ -898,13 +955,16 @@ def make(argv=None):
         if spec["subtitle"]:
             texts["subtitle"] = spec["subtitle"]
         rules, groups = [], []
+        title_px = drawn_height(hrizzup_draw, style, template, size, "title", texts["title"])
+        subtitle_px = drawn_height(hrizzup_draw, style, template, size, "subtitle", texts["subtitle"]) if "subtitle" in texts else 0
+        template, body = place_header(template, size, title_px, subtitle_px)
         if spec["template"] == "stat-card":
             stat = spec["chart"]
             texts.update({"value": stat["value"], "label": stat["label"]})
             if stat["note"]:
                 texts["note"] = stat["note"]
         elif spec["template"] == "steps-card":
-            template, rules = spread_steps(template, len(spec["steps"]))
+            template, rules = spread_steps(template, len(spec["steps"]), body)
             for number_, step in enumerate(spec["steps"], start=1):
                 texts["n%d" % number_], texts["step%d" % number_] = str(number_), step
             groups = [["n%d" % n for n in range(1, len(spec["steps"]) + 1)], ["step%d" % n for n in range(1, len(spec["steps"]) + 1)]]

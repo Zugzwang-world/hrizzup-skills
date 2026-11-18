@@ -55,6 +55,25 @@ class Commands(unittest.TestCase):
         self.assertTrue(install[-1].endswith("meme.requirements.txt"))
         self.assertTrue(run[0].startswith("/v") and run[1].endswith("meme.py"))  # that environment's own Python
 
+    def test_the_pip_way_also_asks_pillow_about_libimagequant(self):
+        command = kits_run.feature_command("/v/bin/python")
+        self.assertEqual(command[:2], ["/v/bin/python", "-c"])
+        self.assertIn("features.check_feature('libimagequant')", command[2])
+        self.assertIn("from PIL import features", command[2])
+        compile(command[2], "<feature>", "exec")  # it is valid Python
+
+    def test_the_notices_row_says_what_was_checked_and_where_it_is_confirmed(self):
+        with open(os.path.join(ROOT, "NOTICES.md"), encoding="utf-8") as f:
+            rows = [line for line in f.read().split("\n") if line.startswith("| libimagequant")]
+        self.assertEqual(len(rows), 1)
+        self.assertIn('scope "optional"', rows[0])
+        self.assertIn("not built into the macOS arm64 wheel", rows[0])
+        self.assertIn("check_feature('libimagequant')", rows[0])
+        self.assertIn("tools/kits_run.py", rows[0])
+        self.assertIn("No kit calls `quantize`", rows[0])
+        self.assertIn("installed by the creator's setup", rows[0])
+        self.assertNotIn("built with this", rows[0])  # the earlier, stronger claim
+
     def test_help_ends_with_an_example(self):
         text = kits_run.make_parser().format_help().strip().split("\n")
         tail = "\n".join(text[-4:]).lower()

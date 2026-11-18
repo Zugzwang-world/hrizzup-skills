@@ -50,6 +50,10 @@ KITS = (
      "infographic.png", "infographic.png", ((1080, 1350), (1080, 1080))),
 )
 MODES = ("uv", "pip")
+# What the pip way also asks the environment it installed, so NOTICES.md's libimagequant row can be confirmed on each
+# platform: whether Pillow's wheel was built with it (Pillow lists it as optional; the macOS arm64 wheel wasn't).
+FEATURE_CODE = ("import json; from PIL import features; "
+                "print(json.dumps({'libimagequant': features.check_feature('libimagequant'), 'version': features.version('libimagequant')}))")
 
 
 def load_media():
@@ -76,6 +80,11 @@ def pip_commands(python, script, arguments, out, venv):
         [interpreter, "-m", "pip", "install", "--require-hashes", "--no-input", "-r", requirements],
         [interpreter, os.path.join("scripts", script)] + arguments + ["--out", out],
     ]
+
+
+def feature_command(interpreter):
+    """The command that asks Pillow, in the environment the pip way made, whether its wheel has libimagequant."""
+    return [interpreter, "-c", FEATURE_CODE]
 
 
 def run(command, folder, log):
@@ -144,6 +153,14 @@ def main(argv=None):
                 if code != 0:
                     entry["problems"].append("`%s ...` exited %d: %s" % (os.path.basename(command[0]), code, last[:300]))
                     break
+            if code == 0 and mode == "pip":
+                asked, said = run(feature_command(commands[-1][0]), skill_folder, log)
+                try:
+                    entry["pillowFeatures"] = json.loads(said)
+                    log("Pillow's libimagequant here: %s" % entry["pillowFeatures"]["libimagequant"])
+                except ValueError:
+                    entry["pillowFeatures"] = None
+                    log("Pillow's libimagequant here: couldn't be read (%s)" % said[:120])
             if code == 0:
                 info, found = check_output(media, target, sizes)
                 entry["problems"] += found
@@ -161,6 +178,9 @@ def main(argv=None):
         f.write("\n")
     log("")
     for entry in results:
+        features = entry.get("pillowFeatures")
+        if features:
+            log("     %s: libimagequant in Pillow's wheel: %s" % (entry["kit"], features["libimagequant"]))
         log("%-4s %-12s %s %s %s" % (entry["mode"], entry["kit"], "ok  " if entry["ok"] else "FAIL",
                                       "%sx%s, %s bytes" % (entry.get("width"), entry.get("height"), entry.get("bytes")) if "bytes" in entry else "",
                                       "; ".join(entry["problems"]) or ("(same bytes as the committed sample)" if entry.get("sameAsCommittedSample") else "(a different drawing from the committed sample's bytes)")))
