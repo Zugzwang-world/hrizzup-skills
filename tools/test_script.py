@@ -196,7 +196,7 @@ def compare(text, heard):
 
 class TheGate(unittest.TestCase):
     """Did the voice say the script? A word with two forms and a number are one word each; a number heard as another number, or three
-    words in a row not heard, fail whatever the word error rate."""
+    words in a row with nothing heard in their place, fail whatever the word error rate."""
 
     def test_a_perfect_reading_has_no_differences(self):
         found = compare("Readings in Delhi passed 450 today.", "readings in Delhi passed four hundred and fifty today")
@@ -238,15 +238,41 @@ class TheGate(unittest.TestCase):
         full = " ".join(text.replace(".", "").split())
         dropped = full.replace("five six seven", "")
         found = compare(text, dropped)
-        self.assertEqual(found.longest_unheard_run(), 3)
+        self.assertEqual(found.longest_missing_run(), 3)
         self.assertLess(found.rate, 0.15)
         self.assertIn("3 script words in a row weren't heard", found.problems(0.15))
         found = compare(text, full.replace("five six", ""))
-        self.assertEqual(found.longest_unheard_run(), 2)
+        self.assertEqual(found.longest_missing_run(), 2)
         self.assertEqual(found.problems(0.15), [])
-        # words that were changed, not dropped, are not heard either
-        found = compare(text, full.replace("five six seven", "cat dog fish"))
-        self.assertEqual(found.longest_unheard_run(), 3)
+
+    def test_a_list_of_names_heard_as_other_words_is_not_a_skipped_sentence(self):
+        # the recogniser spells names its own way: three in a row heard differently are changed words, not missing ones
+        text = ("one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen. "
+                "The cities are Gurugram, Ghaziabad, Faridabad and Noida. seventeen eighteen nineteen twenty twenty-one twenty-two.")
+        full = " ".join(text.replace(".", "").replace(",", "").lower().split())
+        heard = full.replace("gurugram ghaziabad faridabad", "guru graham ghazi abad fareed abad")
+        found = compare(text, heard)
+        self.assertEqual([status for status, _w in found.results()].count("changed"), 3)
+        self.assertEqual(found.longest_missing_run(), 0)
+        self.assertEqual(found.problems(0.20), [])
+        self.assertTrue(found.differences())  # they are still listed
+        # one word heard for a whole name still passes, and so do four in a row
+        self.assertEqual(compare(text, heard.replace("noida", "boy da")).longest_missing_run(), 0)
+
+    def test_a_skipped_sentence_still_fails_whatever_else_was_heard(self):
+        text = ("one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen. "
+                "The sky was clear all day. nineteen twenty twenty-one twenty-two twenty-three twenty-four twenty-five.")
+        full = " ".join(text.replace(".", "").lower().split())
+        for heard in (full.replace("the sky was clear all day", ""),
+                      full.replace("the sky was clear all day", "you"),  # a stray word heard where the sentence was
+                      full.replace("the sky was clear all day", "sky"),
+                      full.replace("the sky was clear all day", "the cat")):
+            found = compare(text, heard)
+            self.assertGreaterEqual(found.longest_missing_run(), 3, heard)
+            self.assertIn("in a row weren't heard", " ".join(found.problems(0.15)), heard)
+        # a word heard right between the missing ones ends the run
+        found = compare(text, full.replace("the sky", "").replace("clear all", ""))  # "was" and "day" are still heard
+        self.assertLess(found.longest_missing_run(), 3)
 
     def test_the_word_error_rate_counts_changed_missing_and_added_words(self):
         found = compare("alpha bravo charlie delta echo foxtrot golf hotel india juliet", "alpha xray charlie delta echo foxtrot golf hotel india juliet kilo")
@@ -266,7 +292,7 @@ class TheGate(unittest.TestCase):
     def test_adjacent_changed_words_are_one_difference(self):
         found = compare("alpha bravo charlie delta echo foxtrot", "alpha xray yankee zulu echo foxtrot")
         self.assertEqual(found.differences(), ["said 'bravo charlie delta', heard 'xray yankee zulu'"])
-        self.assertEqual(found.longest_unheard_run(), 3)
+        self.assertEqual(found.longest_missing_run(), 0)  # heard as other words: changed, not missing
 
     def test_spelled_letters_are_one_word(self):
         for heard in ("the ncr and aqi", "the N C R and A Q I", "the N.C.R. and A.Q.I."):
@@ -281,7 +307,7 @@ class TheGate(unittest.TestCase):
 
     def test_nothing_heard_and_nothing_said(self):
         found = compare("One two three four.", "")
-        self.assertEqual((found.errors, found.rate, found.longest_unheard_run()), (4, 1.0, 4))
+        self.assertEqual((found.errors, found.rate, found.longest_missing_run()), (4, 1.0, 4))
         self.assertEqual(found.differences(), ["said 'One two three four.', heard nothing there"])
         self.assertEqual(script.compare([], []).rate, 0.0)
 

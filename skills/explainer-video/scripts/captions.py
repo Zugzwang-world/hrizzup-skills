@@ -16,7 +16,8 @@ to 3.5 seconds a cue, broken at sentence ends and at pauses over 0.6 s.
 The check exists to catch the voice failing: speech skipped or garbled. A `{shown|spoken}` counts as one word and matches when
 either form was heard, and so does a number. It fails (exit 1, nothing written) when the word error rate (words changed, added or
 missing, over the words the script says) is above `--max-wer`, when any number in the script was heard as another, or when
-three or more script words in a row weren't heard. Every difference is listed, on a pass too. Respell a word with
+three or more script words in a row had nothing heard in their place (speech skipped; a name heard as another word
+doesn't count). Every difference is listed, on a pass too. Respell a word with
 {shown|spoken} only if the voice itself says it wrong (listen to the narration, or read what Whisper hears in it with no
 prompt); when every word listed is a name the voice said right, that is the recogniser's spelling, not the voice: leave it.
 The first run downloads the model (about 141 MiB, once, checked by its SHA-256) into
@@ -278,7 +279,7 @@ def make_parser():
     parser.add_argument("--timings", help="the timings file voice.py wrote for this script and this narration: no word is shown before its paragraph is spoken or after it ends")
     parser.add_argument("--max-wer", type=float, default=DEFAULT_MAX_WER,
                         help="the largest word error rate to accept, 0 to 1 (default %.2f); over it the command exits 1 and lists the words. "
-                             "A number heard as another, or three script words in a row not heard, fail whatever it is" % DEFAULT_MAX_WER)
+                             "A number heard as another, or three script words in a row with nothing heard in their place, fail whatever it is" % DEFAULT_MAX_WER)
     parser.add_argument("--offline", action="store_true", help="never download: stop, saying what to do, if the model isn't already in the models folder")
     return parser
 
@@ -546,7 +547,7 @@ def make(argv=None):
         log("captions.py:   " + line)
     checks = [{"name": "the voice said the script", "ok": not problems, "wordErrorRate": round(rate, 3), "maxWordErrorRate": args.max_wer,
                "scriptWords": len(comparison.tokens), "numbersHeardWrong": comparison.numbers_heard_wrong(),
-               "longestRunNotHeard": comparison.longest_unheard_run(), "differences": differences}]
+               "longestRunNotHeard": comparison.longest_missing_run(), "differences": differences}]
     if problems:
         message = ("the narration isn't the script: %s. Where they part: %s. Respell a word with {shown|spoken} only if the voice itself "
                    "says it wrong (listen to the narration, or read what Whisper hears in it with no prompt); when every word listed is a "

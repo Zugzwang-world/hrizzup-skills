@@ -298,7 +298,7 @@ def differences(said: Sequence[str], heard: Sequence[str], limit: int = 12) -> L
 # ---- the gate: did the voice say the script? (a word with two forms is one word; numbers and runs of missing words fail) ----
 
 NUMBER_UNIT = re.compile(r"^\W*\d[\d,]*(?:\.\d+)?(?:%|st|nd|rd|th)?\W*$", re.IGNORECASE)
-UNHEARD_RUN = 3  # this many script words in a row that weren't heard fail the gate, whatever the word error rate
+UNHEARD_RUN = 3  # this many script words in a row with nothing heard in their place fail the gate, whatever the word error rate
 
 
 @dataclass
@@ -392,12 +392,17 @@ class Comparison:
                 found.append("said %r (%s), heard %s" % (token.shown, " ".join(token.forms[0]), repr(" ".join(words)) if words else "nothing there"))
         return found
 
-    def longest_unheard_run(self) -> int:
-        """The most script words in a row that weren't heard (missing or changed)."""
+    def longest_missing_run(self) -> int:
+        """The most script words in a row with nothing heard in their place (status "missing"): a skipped sentence. A word heard as
+        something else (a name the recogniser spells its own way) is neither counted nor does it end a run, so a list of misheard
+        names passes, and a skipped sentence with a stray word heard inside it still fails. A word heard right ends the run."""
         longest = run = 0
         for status, _words in self.results():
-            run = run + 1 if status != "heard" else 0
-            longest = max(longest, run)
+            if status == "heard":
+                run = 0
+            elif status == "missing":
+                run += 1
+                longest = max(longest, run)
         return longest
 
     def problems(self, max_wer: float) -> List[str]:
@@ -408,8 +413,8 @@ class Comparison:
         wrong = self.numbers_heard_wrong()
         if wrong:
             found.append("a number was heard as another (%s)" % "; ".join(wrong))
-        if self.longest_unheard_run() >= UNHEARD_RUN:
-            found.append("%d script words in a row weren't heard" % self.longest_unheard_run())
+        if self.longest_missing_run() >= UNHEARD_RUN:
+            found.append("%d script words in a row weren't heard" % self.longest_missing_run())
         return found
 
 
